@@ -1,0 +1,63 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Doctor {
+  id         String     @id @default(uuid())
+  email      String     @unique
+  name       String
+  specialty  String?
+  clinicName String?
+  phone      String?
+  createdAt  DateTime   @default(now())
+  patients   Patient[]
+  protocols  Protocol[]
+}
+
+model Patient {
+  id         String        @id @default(uuid())
+  phone      String        @unique
+  name       String?
+  isUrgent   Boolean       @default(false)
+  assignedTo String
+  doctor     Doctor        @relation(fields: [assignedTo], references: [id])
+  createdAt  DateTime      @default(now())
+  messages   Message[]
+  notes      PrivateNote[]
+}
+
+model Message {
+  id           String   @id @default(uuid())
+  patientId    String
+  patient      Patient  @relation(fields: [patientId], references: [id])
+  content      String
+  sender       String
+  protocolName String?
+  createdAt    DateTime @default(now())
+}
+
+model Protocol {
+  id         String   @id @default(uuid())
+  doctorId   String
+  doctor     Doctor   @relation(fields: [doctorId], references: [id])
+  title      String
+  keywords   String[]
+  replyText  String
+  isActive   Boolean  @default(true)
+  addToMenu  Boolean  @default(false)
+  usageCount Int      @default(0)
+  createdAt  DateTime @default(now())
+}
+
+model PrivateNote {
+  id        String   @id @default(uuid())
+  patientId String
+  patient   Patient  @relation(fields: [patientId], references: [id])
+  content   String
+  createdAt DateTime @default(now())
+}
