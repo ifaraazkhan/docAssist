@@ -21,43 +21,51 @@ router.get('/', (req: Request, res: Response) => {
 
 // POST — incoming patient messages from Meta
 router.post('/', async (req: Request, res: Response) => {
-  // Acknowledge immediately — Meta requires response within 20s
   res.status(200).send('OK')
 
   try {
     const body = req.body
+    console.log('[webhook] body:', JSON.stringify(body))
 
     const entry = body?.entry?.[0]
     const changes = entry?.changes?.[0]
     const value = changes?.value
     const messages = value?.messages
 
-    if (!messages || messages.length === 0) return
+    if (!messages || messages.length === 0) {
+      console.log('[webhook] no messages in payload, skipping')
+      return
+    }
 
     const msg = messages[0]
-    const from = msg.from // patient's phone number
+    const from = msg.from
     const msgType = msg.type
+    console.log('[webhook] from:', from, 'type:', msgType)
 
     let text = ''
 
     if (msgType === 'text') {
       text = msg.text?.body ?? ''
     } else if (msgType === 'interactive') {
-      // Patient selected from menu
       text = msg.interactive?.list_reply?.id ?? ''
     } else {
-      // Voice, image, etc. — not handled in MVP
+      console.log('[webhook] unsupported message type:', msgType)
       return
     }
 
-    // Get the default doctor (first one — expand later for multi-doctor)
-    const doctor = await prisma.doctor.findFirst()
-    if (!doctor) return
+    console.log('[webhook] text:', text)
 
-    // Find or create patient
+    const doctor = await prisma.doctor.findFirst()
+    if (!doctor) {
+      console.log('[webhook] no doctor found in DB')
+      return
+    }
+    console.log('[webhook] doctor:', doctor.id)
+
     let patient = await prisma.patient.findUnique({ where: { phone: from } })
 
     if (!patient) {
+      console.log('[webhook] new patient, creating...')
       patient = await prisma.patient.create({
         data: {
           phone: from,
@@ -66,10 +74,11 @@ router.post('/', async (req: Request, res: Response) => {
         },
       })
 
-      // First message — send welcome menu
       const menuProtocols = await prisma.protocol.findMany({
         where: { doctorId: doctor.id, isActive: true, addToMenu: true },
       })
+
+      console.log('[webhook] menu protocols:', menuProtocols.length)
 
       if (menuProtocols.length > 0) {
         await sendWhatsAppMenu(
@@ -77,32 +86,28 @@ router.post('/', async (req: Request, res: Response) => {
           `Hi! I'm the assistant for ${doctor.clinicName ?? doctor.name}. How can I help you?`,
           menuProtocols.map((p) => ({ id: p.id, title: p.title }))
         )
+        console.log('[webhook] menu sent')
       } else {
         await sendWhatsAppMessage(
           from,
           `Hi! I'm the assistant for ${doctor.clinicName ?? doctor.name}. Your message has been received. The doctor will respond shortly.`
         )
+        console.log('[webhook] welcome message sent')
       }
+    } else {
+      console.log('[webhook] existing patient:', patient.id)
     }
 
-    // Save incoming message
     await prisma.message.create({
-      data: {
-        patientId: patient.id,
-        content: text,
-        sender: 'patient',
-      },
+      data: { patientId: patient.id, content: text, sender: 'patient' },
     })
 
-    // Match against protocols
     const protocols = await prisma.protocol.findMany({
       where: { doctorId: doctor.id, isActive: true },
     })
 
-    // Check if it's a menu selection (interactive reply ID = protocol ID)
     let matched = protocols.find((p) => p.id === text)
 
-    // Otherwise keyword match
     if (!matched) {
       const lowerText = text.toLowerCase()
       matched = protocols.find((p) =>
@@ -110,9 +115,10 @@ router.post('/', async (req: Request, res: Response) => {
       )
     }
 
+    console.log('[webhook] matched protocol:', matched?.title ?? 'none')
+
     if (matched) {
       await sendWhatsAppMessage(from, matched.replyText)
-
       await prisma.message.create({
         data: {
           patientId: patient.id,
@@ -121,26 +127,21 @@ router.post('/', async (req: Request, res: Response) => {
           protocolName: matched.title,
         },
       })
-
       await prisma.protocol.update({
         where: { id: matched.id },
         data: { usageCount: { increment: 1 } },
       })
     } else {
-      // No match — notify patient, flag for doctor
-      await sendWhatsAppMessage(
-        from,
-        'Your message has been noted. The doctor will respond shortly.'
-      )
-
-      // Mark patient as needs attention
+      await sendWhatsAppMessage(from, 'Your message has been noted. The doctor will respond shortly.')
       await prisma.patient.update({
         where: { id: patient.id },
         data: { isUrgent: true },
       })
     }
+
+    console.log('[webhook] processing complete')
   } catch (err) {
-    console.error('Webhook processing error:', err)
+    console.error('[webhook] error:', err)
   }
 })
 
