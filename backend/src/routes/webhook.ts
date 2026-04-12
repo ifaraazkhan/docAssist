@@ -21,8 +21,6 @@ router.get('/', (req: Request, res: Response) => {
 
 // POST — incoming patient messages from Meta
 router.post('/', async (req: Request, res: Response) => {
-  res.status(200).send('OK')
-
   try {
     const body = req.body
     console.log('[webhook] body:', JSON.stringify(body))
@@ -140,8 +138,10 @@ router.post('/', async (req: Request, res: Response) => {
     }
 
     console.log('[webhook] processing complete')
+    res.status(200).send('OK')
   } catch (err) {
     console.error('[webhook] error:', err)
+    res.status(200).send('OK') // always return 200 to Meta
   }
 })
 
