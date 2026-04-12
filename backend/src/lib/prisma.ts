@@ -14,7 +14,12 @@ function createPrismaClient() {
     throw new Error('DATABASE_URL environment variable is not set')
   }
 
-  const pool = new Pool({ connectionString })
+  // Strip unsupported params from Neon serverless driver
+  const url = new URL(connectionString)
+  url.searchParams.delete('channel_binding')
+  url.searchParams.delete('pgbouncer')
+
+  const pool = new Pool({ connectionString: url.toString() })
   const adapter = new PrismaNeon(pool)
   return new PrismaClient({ adapter, log: ['error'] })
 }

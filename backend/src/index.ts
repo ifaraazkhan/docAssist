@@ -25,11 +25,7 @@ app.use('/api/notes', noteRoutes)
 app.use('/api/webhook/whatsapp', webhookRoutes)
 
 app.get('/health', (_req, res) => {
-  res.json({
-    status: 'ok',
-    db: process.env.DATABASE_URL ? 'set' : 'missing',
-    node_env: process.env.NODE_ENV,
-  })
+  res.json({ status: 'ok' })
 })
 
 // Local dev only
