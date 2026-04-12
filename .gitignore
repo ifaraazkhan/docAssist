@@ -34,3 +34,6 @@ npm-debug.log*
 
 # Claude
 .claude/
+
+# Markdown docs
+*.md
