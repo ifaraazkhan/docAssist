@@ -27,15 +27,16 @@ export default function StatCard({
 
   return (
     <div
-      className={`card p-4 bg-gradient-to-br ${accentColors[accent]} border-0`}
+      className={`card p-4 bg-gradient-to-br ${accentColors[accent]}`}
+      style={{ border: "none" }}
     >
       <div className="flex items-center justify-between">
         <div>
-          <p className="text-2xl font-display">{value}</p>
-          <p className="text-[11px] mt-0.5 opacity-70">{label}</p>
+          <p className="text-2xl font-display font-bold tracking-tight">{value}</p>
+          <p className="text-[11px] mt-1 opacity-80 font-medium leading-tight">{label}</p>
         </div>
         <div
-          className={`w-10 h-10 rounded-xl ${iconColors[accent]} flex items-center justify-center`}
+          className={`w-10 h-10 rounded-xl ${iconColors[accent]} flex items-center justify-center shadow-sm`}
         >
           {icon}
         </div>

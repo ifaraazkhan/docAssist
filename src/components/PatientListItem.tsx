@@ -1,25 +1,48 @@
 "use client";
 
 import Link from "next/link";
-import { AlertCircle, ChevronRight, User } from "lucide-react";
+import { ChevronRight, User } from "lucide-react";
 import type { Patient } from "@/lib/api";
 
+/** Strip WhatsApp markdown (*bold*, _italic_, ~strike~) for plain-text previews */
+function stripWhatsAppMarkdown(text: string): string {
+  return text
+    .replace(/\*([^*]+)\*/g, "$1")
+    .replace(/_([^_]+)_/g, "$1")
+    .replace(/~([^~]+)~/g, "$1")
+    .replace(/```[^`]*```/g, "")
+    .trim();
+}
+
+function formatTime(raw: string): string {
+  const d = new Date(raw);
+  if (isNaN(d.getTime())) return raw;
+  return d.toLocaleTimeString("en-IN", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: true,
+  }).replace(/\s?am/i, " AM").replace(/\s?pm/i, " PM");
+}
+
 export default function PatientListItem({ patient }: { patient: Patient }) {
+  const preview = stripWhatsAppMarkdown(patient.lastMessage ?? "");
+
   return (
     <Link
       href={`/patients/${patient.id}`}
       className="card-hover flex items-center gap-3 p-4 animate-fade-in"
     >
-      {/* Avatar */}
+      {/* Avatar — urgent ring, no redundant dot icon */}
       <div className="relative flex-shrink-0">
-        <div className="w-12 h-12 rounded-full bg-gradient-to-br from-brand-100 to-brand-200 flex items-center justify-center">
-          <User size={20} className="text-brand-600" />
+        <div
+          className={`w-12 h-12 rounded-full flex items-center justify-center ${
+            patient.isUrgent
+              ? "bg-gradient-to-br from-red-100 to-red-200 ring-2 ring-urgent ring-offset-2"
+              : "bg-gradient-to-br from-brand-100 to-brand-200"
+          }`}
+        >
+          <User size={20} className={patient.isUrgent ? "text-urgent" : "text-brand-600"} />
         </div>
-        {patient.isUrgent && (
-          <div className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-urgent rounded-full border-2 border-white flex items-center justify-center animate-pulse-soft">
-            <AlertCircle size={10} className="text-white" />
-          </div>
-        )}
       </div>
 
       {/* Content */}
@@ -28,41 +51,41 @@ export default function PatientListItem({ patient }: { patient: Patient }) {
           <h3
             className={`text-sm truncate ${
               patient.unreadCount > 0
-                ? "font-semibold text-slate-900"
-                : "font-medium text-slate-700"
+                ? "font-semibold text-slate-950"
+                : "font-medium text-slate-800"
             }`}
           >
             {patient.name ?? patient.phone}
           </h3>
-          <span className="text-[11px] text-slate-400 flex-shrink-0">
-            {new Date(patient.lastMessageTime).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}
+          <span className="text-[11px] text-slate-500 flex-shrink-0 tabular-nums">
+            {formatTime(patient.lastMessageTime)}
           </span>
         </div>
 
         <p
           className={`text-xs mt-0.5 truncate ${
-            patient.unreadCount > 0 ? "text-slate-600" : "text-slate-400"
+            patient.unreadCount > 0 ? "text-slate-700" : "text-slate-500"
           }`}
         >
-          {patient.lastMessage}
+          {preview}
         </p>
 
-        {/* Bottom row */}
-        <div className="flex items-center gap-2 mt-1.5">
-          {patient.isUrgent && (
+        {/* Status badges */}
+        {patient.isUrgent && (
+          <div className="mt-1.5">
             <span className="badge-urgent text-[10px]">Urgent</span>
-          )}
-        </div>
+          </div>
+        )}
       </div>
 
       {/* Right side */}
-      <div className="flex flex-col items-center gap-1 flex-shrink-0">
+      <div className="flex flex-col items-center gap-1.5 flex-shrink-0">
         {patient.unreadCount > 0 && (
           <div className="w-5 h-5 bg-brand-500 text-white rounded-full flex items-center justify-center text-[10px] font-bold">
             {patient.unreadCount}
           </div>
         )}
-        <ChevronRight size={14} className="text-slate-300" />
+        <ChevronRight size={14} className="text-slate-400" />
       </div>
     </Link>
   );

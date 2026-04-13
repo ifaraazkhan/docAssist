@@ -8,7 +8,7 @@
   --color-brand: #0d9488;
   --color-brand-dark: #115e59;
   --color-brand-light: #ccfbf1;
-  --color-surface: #faf9f7;
+  --color-surface: #f7f6f3;
   --color-urgent: #ef4444;
   --color-urgent-bg: #fef2f2;
   --grain-opacity: 0.03;
@@ -26,8 +26,8 @@
   }
 
   body {
-    background-color: #faf9f7;
-    color: #1e293b;
+    background-color: #f7f6f3;
+    color: #0f172a;
     min-height: 100dvh;
     overflow-x: hidden;
   }
@@ -49,16 +49,18 @@
     justify-content: center;
     gap: 0.5rem;
     padding: 0.75rem 1.5rem;
-    background-color: #0f766e;
+    background: linear-gradient(135deg, #0f766e 0%, #0d9488 100%);
     color: #fff;
-    font-weight: 500;
+    font-weight: 600;
+    letter-spacing: 0.01em;
     border-radius: 0.75rem;
-    box-shadow: 0 1px 3px 0 rgba(0,0,0,0.04), 0 1px 2px -1px rgba(0,0,0,0.03);
+    box-shadow: 0 1px 2px rgba(0,0,0,0.08), 0 4px 12px -4px rgba(13,148,136,0.35);
     transition: all 0.2s;
   }
   .btn-primary:hover {
-    background-color: #115e59;
-    box-shadow: 0 2px 8px -2px rgba(0,0,0,0.08), 0 1px 4px -2px rgba(0,0,0,0.04);
+    background: linear-gradient(135deg, #115e59 0%, #0f766e 100%);
+    box-shadow: 0 2px 4px rgba(0,0,0,0.08), 0 8px 20px -6px rgba(13,148,136,0.45);
+    transform: translateY(-1px);
   }
   .btn-primary:active {
     transform: scale(0.98);
@@ -75,17 +77,19 @@
     gap: 0.5rem;
     padding: 0.75rem 1.5rem;
     background-color: #fff;
-    color: #334155;
-    font-weight: 500;
+    color: #1e293b;
+    font-weight: 600;
+    letter-spacing: 0.01em;
     border-radius: 0.75rem;
-    border: 1px solid #e2e8f0;
-    box-shadow: 0 1px 3px 0 rgba(0,0,0,0.04), 0 1px 2px -1px rgba(0,0,0,0.03);
+    border: 1px solid #cbd5e1;
+    box-shadow: 0 1px 3px 0 rgba(0,0,0,0.05), 0 1px 2px -1px rgba(0,0,0,0.04);
     transition: all 0.2s;
   }
   .btn-secondary:hover {
     background-color: #f8fafc;
-    box-shadow: 0 2px 8px -2px rgba(0,0,0,0.08), 0 1px 4px -2px rgba(0,0,0,0.04);
-    border-color: #cbd5e1;
+    box-shadow: 0 4px 12px -4px rgba(0,0,0,0.10), 0 1px 3px rgba(0,0,0,0.06);
+    border-color: #94a3b8;
+    transform: translateY(-1px);
   }
   .btn-secondary:active {
     transform: scale(0.98);
@@ -98,21 +102,22 @@
   .card {
     background-color: #fff;
     border-radius: 1rem;
-    box-shadow: 0 2px 8px -2px rgba(0,0,0,0.08), 0 1px 4px -2px rgba(0,0,0,0.04);
-    border: 1px solid rgba(241, 245, 249, 0.6);
+    box-shadow: 0 1px 4px -1px rgba(0,0,0,0.06), 0 4px 12px -4px rgba(0,0,0,0.08), 0 0 0 1px rgba(15,23,42,0.05);
+    border: 1px solid rgba(226, 232, 240, 0.7);
     transition: all 0.2s;
   }
 
   .card-hover {
     background-color: #fff;
     border-radius: 1rem;
-    box-shadow: 0 2px 8px -2px rgba(0,0,0,0.08), 0 1px 4px -2px rgba(0,0,0,0.04);
-    border: 1px solid rgba(241, 245, 249, 0.6);
+    box-shadow: 0 1px 4px -1px rgba(0,0,0,0.06), 0 4px 12px -4px rgba(0,0,0,0.08), 0 0 0 1px rgba(15,23,42,0.05);
+    border: 1px solid rgba(226, 232, 240, 0.7);
     transition: all 0.2s;
   }
   .card-hover:hover {
-    box-shadow: 0 8px 24px -4px rgba(0,0,0,0.12), 0 2px 8px -4px rgba(0,0,0,0.06);
-    transform: translateY(-2px);
+    box-shadow: 0 8px 28px -6px rgba(0,0,0,0.14), 0 2px 8px -4px rgba(0,0,0,0.08), 0 0 0 1px rgba(15,23,42,0.07);
+    transform: translateY(-1px);
+    border-color: rgba(203, 213, 225, 0.9);
   }
 
   .input-field {
@@ -120,16 +125,17 @@
     padding: 0.75rem 1rem;
     background-color: #fff;
     border-radius: 0.75rem;
-    border: 1px solid #e2e8f0;
-    color: #1e293b;
+    border: 1px solid #cbd5e1;
+    color: #0f172a;
     transition: all 0.2s;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.04) inset;
   }
   .input-field::placeholder {
-    color: #94a3b8;
+    color: #64748b;
   }
   .input-field:focus {
     outline: none;
-    box-shadow: 0 0 0 3px rgba(13, 148, 136, 0.3);
+    box-shadow: 0 0 0 3px rgba(13, 148, 136, 0.2), 0 1px 2px rgba(0,0,0,0.04) inset;
     border-color: #0d9488;
   }
 
@@ -176,7 +182,7 @@
     font-size: 0.75rem;
     font-weight: 600;
     background-color: #f1f5f9;
-    color: #475569;
+    color: #334155;
   }
 
   .page-container {

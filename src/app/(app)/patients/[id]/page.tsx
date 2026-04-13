@@ -9,9 +9,10 @@ import {
   Bot,
   Send,
   Mic,
+  CheckCircle2,
 } from "lucide-react";
 import Header from "@/components/Header";
-import { getPatient, getMessages, sendMessage, getNotes, createNote, type Patient, type Message, type PrivateNote } from "@/lib/api";
+import { getPatient, getMessages, sendMessage, getNotes, createNote, updatePatient, type Patient, type Message, type PrivateNote } from "@/lib/api";
 
 type ChatMode = "chat" | "notes";
 
@@ -27,6 +28,7 @@ export default function PatientChatPage() {
   const [newNote, setNewNote] = useState("");
   const [sending, setSending] = useState(false);
   const [savingNote, setSavingNote] = useState(false);
+  const [resolving, setResolving] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -67,6 +69,19 @@ export default function PatientChatPage() {
     }
   };
 
+  const handleResolve = async () => {
+    if (!patient || resolving) return;
+    setResolving(true);
+    try {
+      await updatePatient(patientId, { isUrgent: false });
+      setPatient((prev) => prev ? { ...prev, isUrgent: false } : prev);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setResolving(false);
+    }
+  };
+
   if (!patient) {
     return (
       <div className="page-container pt-20 text-center">
@@ -84,11 +99,20 @@ export default function PatientChatPage() {
         showBack
         rightAction={
           patient.isUrgent ? (
-            <span className="badge-urgent">
-              <AlertCircle size={10} />
-              Urgent
-            </span>
-          ) : undefined
+            <button
+              onClick={handleResolve}
+              disabled={resolving}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-urgent-bg border border-red-200 text-urgent-text text-xs font-semibold transition-all duration-200 hover:bg-red-100 active:scale-95 disabled:opacity-60"
+            >
+              <AlertCircle size={12} />
+              {resolving ? "Resolving…" : "Mark Resolved"}
+            </button>
+          ) : (
+            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-50 border border-emerald-200">
+              <CheckCircle2 size={12} className="text-emerald-600" />
+              <span className="text-xs font-semibold text-emerald-700">Resolved</span>
+            </div>
+          )
         }
       />
 

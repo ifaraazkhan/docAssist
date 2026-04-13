@@ -7,7 +7,7 @@ import {
   Clock,
   MailOpen,
   Zap,
-  TrendingUp,
+  Activity,
 } from "lucide-react";
 import Header from "@/components/Header";
 import PatientListItem from "@/components/PatientListItem";
@@ -66,8 +66,8 @@ export default function DashboardPage() {
         {/* Stats row */}
         <div className="grid grid-cols-2 gap-3 mb-6 animate-fade-in">
           <StatCard
-            label="Auto-handled this week"
-            value={`${patients.length > 0 ? Math.round(((patients.length - urgentCount) / patients.length) * 100) : 0}%`}
+            label="Patients via bot"
+            value={patients.length > 0 ? patients.length : "—"}
             icon={<Zap size={18} />}
             accent="brand"
           />
@@ -81,13 +81,24 @@ export default function DashboardPage() {
 
         {/* Quick insight bar */}
         <div className="card p-3 mb-6 flex items-center gap-3 animate-fade-in stagger-2">
-          <div className="w-8 h-8 bg-emerald-50 rounded-lg flex items-center justify-center flex-shrink-0">
-            <TrendingUp size={16} className="text-emerald-600" />
+          <div className="w-8 h-8 bg-slate-50 rounded-lg flex items-center justify-center flex-shrink-0">
+            <Activity size={16} className="text-slate-500" />
           </div>
-          <p className="text-xs text-slate-600 leading-relaxed">
-            <span className="font-semibold text-slate-800">{patients.length - urgentCount}</span> of{" "}
-            <span className="font-semibold text-slate-800">{patients.length}</span> patients
-            were handled automatically this week by your protocols.
+          <p className="text-xs text-slate-700 leading-relaxed">
+            {urgentCount > 0 ? (
+              <>
+                <span className="text-urgent-text font-semibold">{urgentCount} patient{urgentCount > 1 ? "s" : ""}</span>
+                {" "}need{urgentCount === 1 ? "s" : ""} your personal reply.{" "}
+                <span className="text-slate-500">Open the chat and tap <strong>Mark Resolved</strong> once done.</span>
+              </>
+            ) : patients.length > 0 ? (
+              <>
+                All <span className="font-semibold text-slate-900">{patients.length}</span> chats
+                {" "}reviewed — you&apos;re all caught up!
+              </>
+            ) : (
+              <>No patient messages yet.</>
+            )}
           </p>
         </div>
 
@@ -97,12 +108,12 @@ export default function DashboardPage() {
             <button
               key={filter.key}
               onClick={() => setActiveFilter(filter.key)}
-              className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-medium transition-all duration-200 ${
+              className={`flex items-center gap-1.5 px-3.5 min-h-[44px] rounded-xl text-xs font-semibold transition-all duration-200 ${
                 activeFilter === filter.key
                   ? filter.key === "urgent"
-                    ? "bg-urgent-bg text-urgent-text shadow-soft"
-                    : "bg-brand-50 text-brand-700 shadow-soft"
-                  : "bg-white text-slate-500 hover:bg-slate-50 border border-slate-100"
+                    ? "bg-urgent-bg text-urgent-text shadow-soft border border-red-100"
+                    : "bg-brand-50 text-brand-700 shadow-soft border border-brand-100"
+                  : "bg-white text-slate-600 hover:text-slate-800 hover:bg-slate-50 border border-slate-200"
               }`}
             >
               {filter.icon}
@@ -141,10 +152,10 @@ export default function DashboardPage() {
               <div className="w-12 h-12 bg-slate-100 rounded-xl flex items-center justify-center mx-auto mb-3">
                 <MessageSquare size={20} className="text-slate-400" />
               </div>
-              <p className="text-sm font-medium text-slate-500">
+              <p className="text-sm font-semibold text-slate-700">
                 {patients.length === 0 ? "No patients yet" : "No messages in this category"}
               </p>
-              <p className="text-xs text-slate-400 mt-1">
+              <p className="text-xs text-slate-500 mt-1">
                 {patients.length === 0
                   ? "Patients will appear here when they message your WhatsApp number"
                   : "All caught up!"}

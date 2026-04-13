@@ -33,6 +33,7 @@ const config: Config = {
         },
         slate: {
           850: "#172033",
+          950: "#0a0f1e",
         },
       },
       fontFamily: {

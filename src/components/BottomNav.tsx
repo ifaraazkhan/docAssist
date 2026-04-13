@@ -2,15 +2,10 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import {
-  MessageSquare,
-  Layers,
-  Settings,
-  LayoutDashboard,
-} from "lucide-react";
+import { Inbox, Layers, Settings } from "lucide-react";
 
 const navItems = [
-  { href: "/dashboard", icon: LayoutDashboard, label: "Inbox" },
+  { href: "/dashboard", icon: Inbox, label: "Inbox" },
   { href: "/protocols", icon: Layers, label: "Protocols" },
   { href: "/settings", icon: Settings, label: "Settings" },
 ];
@@ -19,8 +14,8 @@ export default function BottomNav() {
   const pathname = usePathname();
 
   return (
-    <nav className="fixed bottom-0 left-0 right-0 z-50 bg-white/80 backdrop-blur-xl border-t border-slate-100 safe-bottom">
-      <div className="max-w-lg mx-auto flex items-center justify-around py-2">
+    <nav className="fixed bottom-0 left-0 right-0 z-50 bg-white/90 backdrop-blur-xl border-t border-slate-200/80 safe-bottom">
+      <div className="max-w-lg mx-auto flex items-center justify-around py-1">
         {navItems.map((item) => {
           const isActive =
             pathname === item.href || pathname?.startsWith(item.href + "/");
@@ -30,10 +25,10 @@ export default function BottomNav() {
             <Link
               key={item.href}
               href={item.href}
-              className={`flex flex-col items-center gap-0.5 px-4 py-1.5 rounded-xl transition-all duration-200 ${
+              className={`flex flex-col items-center gap-0.5 px-6 py-2 rounded-xl transition-all duration-200 min-h-[44px] justify-center ${
                 isActive
                   ? "text-brand-600"
-                  : "text-slate-400 hover:text-slate-600"
+                  : "text-slate-500 hover:text-slate-700"
               }`}
             >
               <div className="relative">
@@ -47,8 +42,8 @@ export default function BottomNav() {
                 )}
               </div>
               <span
-                className={`text-[10px] font-medium tracking-wide ${
-                  isActive ? "text-brand-700" : ""
+                className={`text-[10px] tracking-wide font-semibold ${
+                  isActive ? "text-brand-700" : "text-slate-500"
                 }`}
               >
                 {item.label}
