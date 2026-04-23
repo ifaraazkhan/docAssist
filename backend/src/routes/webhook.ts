@@ -3,7 +3,7 @@ import crypto from 'crypto'
 import { query, withTransaction } from '../lib/db'
 import { normalizePhone } from '../lib/phone'
 import { signToken } from '../lib/jwt'
-import { sendWhatsAppMessage, sendWhatsAppMenu } from '../lib/whatsapp'
+import { sendWhatsAppMessage, sendWhatsAppMenu, sendWhatsAppButtons, sendWhatsAppSpecialtyList } from '../lib/whatsapp'
 import { webhookVerify } from '../middleware/webhookVerify'
 import { generateDoctorCode, generateSlug } from '../lib/clinic-code'
 
@@ -83,9 +83,19 @@ router.post('/', webhookVerify, async (req: Request, res: Response) => {
     const trimmedText = text.trim()
     const upperText = trimmedText.toUpperCase()
 
-    // ── BRANCH 1: DOCTOR_SIGNUP code ──
-    if (upperText === DOCTOR_SIGNUP_CODE) {
+    // ── BRANCH 1: DOCTOR_SIGNUP (text or button reply) ──
+    if (upperText === DOCTOR_SIGNUP_CODE || upperText === 'DOCTOR_SIGNUP_BTN') {
       await handleDoctorSignup(from, contactName, requestId)
+      res.status(200).send('OK')
+      return
+    }
+
+    // Patient button reply — explain how to connect
+    if (upperText === 'PATIENT_BTN') {
+      await sendWhatsAppMessage(
+        from,
+        'To connect with your doctor, please use the *clinic code* or *QR code* they shared with you.\n\nType the code here to get started.'
+      )
       res.status(200).send('OK')
       return
     }
@@ -128,7 +138,12 @@ router.post('/', webhookVerify, async (req: Request, res: Response) => {
           [token, doc.id, 'login', expiresAt]
         )
         const link = `${process.env.APP_URL || 'http://localhost:3000'}/auth/verify?token=${token}`
-        await sendWhatsAppMessage(from, `Hi Dr. ${doc.name || ''}! Here's your login link (valid 60 min):\n${link}`)
+        await sendWhatsAppMessage(
+          from,
+          `Welcome back, ${formatDrName(doc.name || '')}.\n\n` +
+          `Open your DrCliniq dashboard:\n${link}\n\n` +
+          `_Link expires in 60 minutes._`
+        )
       }
       res.status(200).send('OK')
       return
@@ -198,11 +213,13 @@ router.post('/', webhookVerify, async (req: Request, res: Response) => {
     }
 
     // ── BRANCH 6: Unknown number, no code ──
-    await sendWhatsAppMessage(
+    await sendWhatsAppButtons(
       from,
-      'Welcome! Are you a doctor or a patient?\n\n' +
-      '👨‍⚕️ *Doctor* — Reply "DOCTOR_SIGNUP" to register your clinic\n' +
-      '🧑 *Patient* — Please use the link or QR code your doctor gave you'
+      'Welcome to *DrCliniq* — your clinic\'s WhatsApp assistant.\n\nHow would you like to proceed?',
+      [
+        { id: 'DOCTOR_SIGNUP_BTN', title: 'I\'m a Doctor' },
+        { id: 'PATIENT_BTN', title: 'I\'m a Patient' },
+      ]
     )
 
     res.status(200).send('OK')
@@ -213,19 +230,34 @@ router.post('/', webhookVerify, async (req: Request, res: Response) => {
 })
 
 // ──────────────────────────────────────────────
+// HELPER: Strip "Dr." prefix from user input
+// ──────────────────────────────────────────────
+const DR_PREFIXES = /^(dr\.?\s+|doctor\s+)/i
+
+function stripDrPrefix(name: string): string {
+  return name.replace(DR_PREFIXES, '').trim()
+}
+
+/** Returns "Dr. <name>" — safe to call on any input, won't double-prefix */
+function formatDrName(name: string): string {
+  const clean = stripDrPrefix(name)
+  return clean ? `Dr. ${clean}` : 'Doctor'
+}
+
+// ──────────────────────────────────────────────
 // HANDLER: Doctor signup via WhatsApp
 // ──────────────────────────────────────────────
 async function handleDoctorSignup(phone: string, contactName: string | null, requestId: string) {
   // Check if already a doctor
   const existing = await query(
-    'SELECT id, onboarding_step, onboarding_complete, name FROM doctors WHERE phone = $1',
+    'SELECT id, onboarding_step, onboarding_complete, name, specialty, clinic_name FROM doctors WHERE phone = $1',
     [phone]
   )
 
   if (existing.rows.length > 0) {
     const doc = existing.rows[0]
     if (doc.onboarding_complete) {
-      await sendWhatsAppMessage(phone, `Welcome back, Dr. ${doc.name || ''}! Reply anything to get a login link.`)
+      await sendWhatsAppMessage(phone, `Welcome back, ${formatDrName(doc.name || '')}. Reply with any message to receive your dashboard link.`)
     } else {
       // Resume onboarding
       await resumeOnboarding(phone, doc)
@@ -237,7 +269,7 @@ async function handleDoctorSignup(phone: string, contactName: string | null, req
   await query('INSERT INTO doctors (phone) VALUES ($1)', [phone])
   console.log(`[webhook][${requestId}] new doctor created: ${phone}`)
 
-  await sendWhatsAppMessage(phone, "Welcome to DrCliniq! Let's set up your clinic.\n\nWhat's your full name? (e.g. Dr. Priya Sharma)")
+  await sendWhatsAppMessage(phone, 'Welcome to DrCliniq. Let\'s get your clinic set up.\n\nWhat is your full name?')
 }
 
 // ──────────────────────────────────────────────
@@ -252,36 +284,135 @@ async function handleDoctorOnboarding(
   const step = doc.onboarding_step
 
   if (step === 'name') {
-    await query("UPDATE doctors SET name = $1, onboarding_step = 'specialty', updated_at = now() WHERE id = $2", [text, doc.id])
-    await sendWhatsAppMessage(phone, `Thanks, ${text}! What's your specialty? (e.g. General Physician, Pediatrics, Dermatology)`)
+    const cleanName = stripDrPrefix(text)
+    await query("UPDATE doctors SET name = $1, onboarding_step = 'specialty', updated_at = now() WHERE id = $2", [cleanName, doc.id])
+
+    // Fetch specialties from DB for list message
+    const specResult = await query('SELECT name FROM specialties WHERE is_active = true ORDER BY sort_order ASC')
+    const specialties = specResult.rows.map((r: { name: string }) => r.name)
+
+    if (specialties.length > 0) {
+      await sendWhatsAppSpecialtyList(
+        phone,
+        `Thank you, ${formatDrName(cleanName)}. Please select your specialty.`,
+        specialties
+      )
+    } else {
+      await sendWhatsAppMessage(phone, `Thank you, ${formatDrName(cleanName)}. What is your specialty?`)
+    }
     console.log(`[webhook][${requestId}] onboarding: name collected`)
 
   } else if (step === 'specialty') {
-    await query("UPDATE doctors SET specialty = $1, onboarding_step = 'clinic_name', updated_at = now() WHERE id = $2", [text, doc.id])
-    await sendWhatsAppMessage(phone, "What's your clinic name?")
+    // Handle list reply (strip specialty_ prefix) or free text
+    const rawSpecialty = text.startsWith('specialty_') ? text.replace('specialty_', '') : text
+
+    // If "Other" selected, ask them to type it
+    if (rawSpecialty === 'Other') {
+      await query("UPDATE doctors SET onboarding_step = 'specialty_other', updated_at = now() WHERE id = $1", [doc.id])
+      await sendWhatsAppMessage(phone, 'Please type your specialty.')
+      console.log(`[webhook][${requestId}] onboarding: specialty=Other, asking for custom input`)
+      return
+    }
+
+    await query("UPDATE doctors SET specialty = $1, onboarding_step = 'clinic_name', updated_at = now() WHERE id = $2", [rawSpecialty, doc.id])
+    await sendWhatsAppMessage(phone, 'What is your clinic name?')
     console.log(`[webhook][${requestId}] onboarding: specialty collected`)
 
+  } else if (step === 'specialty_other') {
+    // Doctor typed a custom specialty — try to match against our list
+    const specResult = await query('SELECT name FROM specialties WHERE is_active = true ORDER BY sort_order ASC')
+    const allSpecs = specResult.rows.map((r: { name: string }) => r.name)
+    const inputLower = text.toLowerCase().trim()
+
+    // Fuzzy match: check if input matches any known specialty (case-insensitive, partial)
+    const matched = allSpecs.find((s) => {
+      const specLower = s.toLowerCase()
+      return specLower === inputLower || specLower.includes(inputLower) || inputLower.includes(specLower)
+    })
+
+    if (matched) {
+      // Found a match — confirm with the doctor
+      await sendWhatsAppButtons(
+        phone,
+        `Did you mean *${matched}*?`,
+        [
+          { id: `specialty_confirm_${matched}`, title: 'Yes' },
+          { id: 'specialty_confirm_no', title: 'No, keep mine' },
+        ]
+      )
+      // Store their input temporarily, will finalize on confirmation
+      await query("UPDATE doctors SET specialty = $1, updated_at = now() WHERE id = $2", [text, doc.id])
+      // Save the matched suggestion for reference
+      await query("UPDATE doctors SET onboarding_step = 'specialty_confirm', updated_at = now() WHERE id = $1", [doc.id])
+      console.log(`[webhook][${requestId}] onboarding: custom specialty "${text}" matched "${matched}", confirming`)
+    } else {
+      // No match — store as-is and move on
+      await query("UPDATE doctors SET specialty = $1, onboarding_step = 'clinic_name', updated_at = now() WHERE id = $2", [text, doc.id])
+      await sendWhatsAppMessage(phone, 'What is your clinic name?')
+      console.log(`[webhook][${requestId}] onboarding: custom specialty "${text}" stored (no match)`)
+    }
+
+  } else if (step === 'specialty_confirm') {
+    // Doctor confirming a matched specialty suggestion
+    const reply = text.startsWith('specialty_confirm_') ? text.replace('specialty_confirm_', '') : text.toUpperCase()
+
+    if (reply === 'no' || reply === 'specialty_confirm_no' || reply === 'NO') {
+      // Keep their original input (already stored in specialty column)
+      await query("UPDATE doctors SET onboarding_step = 'clinic_name', updated_at = now() WHERE id = $1", [doc.id])
+      await sendWhatsAppMessage(phone, 'What is your clinic name?')
+    } else {
+      // Use the matched specialty
+      const matchedSpec = text.startsWith('specialty_confirm_') ? text.replace('specialty_confirm_', '') : doc.specialty
+      await query("UPDATE doctors SET specialty = $1, onboarding_step = 'clinic_name', updated_at = now() WHERE id = $2", [matchedSpec, doc.id])
+      await sendWhatsAppMessage(phone, 'What is your clinic name?')
+    }
+    console.log(`[webhook][${requestId}] onboarding: specialty confirmed`)
+
   } else if (step === 'clinic_name') {
-    // Final step — generate code, slug, create system protocol, complete onboarding
-    // Use SELECT FOR UPDATE inside transaction to prevent race conditions
+    // Save clinic name and move to confirmation step
+    await query("UPDATE doctors SET clinic_name = $1, onboarding_step = 'confirm', updated_at = now() WHERE id = $2", [text, doc.id])
+
+    await sendWhatsAppButtons(
+      phone,
+      `Please confirm your details:\n\n` +
+      `*Name:* ${formatDrName(doc.name || '')}\n` +
+      `*Specialty:* ${doc.specialty}\n` +
+      `*Clinic:* ${text}\n\n` +
+      `Is this correct?`,
+      [
+        { id: 'CONFIRM_YES', title: 'Yes, confirm' },
+        { id: 'CONFIRM_NO', title: 'Start over' },
+      ]
+    )
+    console.log(`[webhook][${requestId}] onboarding: clinic_name collected, awaiting confirmation`)
+
+  } else if (step === 'confirm') {
+    const upper = text.toUpperCase()
+    if (upper === 'CONFIRM_NO' || upper === 'NO') {
+      // Reset onboarding
+      await query("UPDATE doctors SET name = NULL, specialty = NULL, clinic_name = NULL, onboarding_step = 'name', updated_at = now() WHERE id = $1", [doc.id])
+      await sendWhatsAppMessage(phone, 'No problem. Let\'s start over.\n\nWhat is your full name?')
+      console.log(`[webhook][${requestId}] onboarding: reset by doctor`)
+      return
+    }
+
+    // Confirm and complete — generate code, slug, create system protocol
     await withTransaction(async (client) => {
-      // Lock the doctor row to prevent concurrent onboarding updates
       await client.query('SELECT id FROM doctors WHERE id = $1 FOR UPDATE', [doc.id])
 
       const doctorCode = await generateDoctorCode()
       const slug = await generateSlug(doc.name || 'doctor')
 
-      // Update doctor
       await client.query(
         `UPDATE doctors SET
-           clinic_name = $1, doctor_code = $2, short_link_slug = $3,
+           doctor_code = $1, short_link_slug = $2,
            onboarding_step = 'done', onboarding_complete = true, updated_at = now()
-         WHERE id = $4`,
-        [text, doctorCode, slug, doc.id]
+         WHERE id = $3`,
+        [doctorCode, slug, doc.id]
       )
 
       // Create "Clinic Details" system protocol
-      const clinicText = `🏥 *${text}*\n👨‍⚕️ ${doc.name || 'Doctor'}\n📋 ${doc.specialty || 'Specialist'}`
+      const clinicText = `*${doc.clinic_name}*\n${formatDrName(doc.name || '')} — ${doc.specialty || 'Specialist'}`
       await client.query(
         `INSERT INTO protocols (doctor_id, title, keywords, reply_text, protocol_type, is_active, add_to_menu)
          VALUES ($1, 'Clinic Details', $2, $3, 'system', true, true)`,
@@ -290,7 +421,7 @@ async function handleDoctorOnboarding(
 
       // Generate magic link for PWA login
       const token = crypto.randomBytes(32).toString('hex')
-      const expiresAt = new Date(Date.now() + 60 * 60 * 1000) // 1 hour for initial setup
+      const expiresAt = new Date(Date.now() + 60 * 60 * 1000)
 
       await client.query(
         'INSERT INTO magic_links (token, doctor_id, purpose, expires_at) VALUES ($1, $2, $3, $4)',
@@ -301,11 +432,14 @@ async function handleDoctorOnboarding(
 
       await sendWhatsAppMessage(
         phone,
-        `✅ Your clinic is set up!\n\n` +
-        `🔑 Your clinic code: *${doctorCode}*\n` +
-        `Share this code with patients to connect with you.\n\n` +
-        `📱 Open your dashboard:\n${link}\n\n` +
-        `You can customize your auto-replies, view patient messages, and more from the dashboard.`
+        `Your clinic is now live on DrCliniq.\n\n` +
+        `*Clinic code:* ${doctorCode}\n` +
+        `Share this with patients — they text it here to reach your clinic.\n\n` +
+        `*Next steps:*\n` +
+        `1. Open your dashboard: ${link}\n` +
+        `2. Set up auto-reply protocols\n` +
+        `3. Share your clinic code or QR with patients\n\n` +
+        `_Link expires in 60 minutes._`
       )
 
       console.log(`[webhook][${requestId}] onboarding complete: code=${doctorCode} slug=${slug}`)
@@ -316,13 +450,53 @@ async function handleDoctorOnboarding(
 // ──────────────────────────────────────────────
 // HANDLER: Resume onboarding from last step
 // ──────────────────────────────────────────────
-async function resumeOnboarding(phone: string, doc: { onboarding_step: string; name: string | null }) {
-  const prompts: Record<string, string> = {
-    name: "Let's continue setting up. What's your full name?",
-    specialty: `Welcome back${doc.name ? ', ' + doc.name : ''}! What's your specialty?`,
-    clinic_name: `Welcome back${doc.name ? ', ' + doc.name : ''}! What's your clinic name?`,
+async function resumeOnboarding(phone: string, doc: { onboarding_step: string; name: string | null; specialty?: string | null; clinic_name?: string | null }) {
+  const drName = doc.name ? formatDrName(doc.name) : ''
+
+  if (doc.onboarding_step === 'specialty' && doc.name) {
+    // Show specialty list
+    const specResult = await query('SELECT name FROM specialties WHERE is_active = true ORDER BY sort_order ASC')
+    const specialties = specResult.rows.map((r: { name: string }) => r.name)
+    if (specialties.length > 0) {
+      await sendWhatsAppSpecialtyList(phone, `Welcome back, ${drName}. Please select your specialty.`, specialties)
+      return
+    }
   }
-  const msg = prompts[doc.onboarding_step] || "Let's continue setting up. What's your full name?"
+
+  if (doc.onboarding_step === 'specialty_other') {
+    await sendWhatsAppMessage(phone, `Welcome back${drName ? ', ' + drName : ''}. Please type your specialty.`)
+    return
+  }
+
+  if (doc.onboarding_step === 'specialty_confirm') {
+    // Re-ask — they had a pending specialty confirmation
+    await sendWhatsAppMessage(phone, `Welcome back${drName ? ', ' + drName : ''}. Please type your specialty.`)
+    await query("UPDATE doctors SET onboarding_step = 'specialty_other', updated_at = now() WHERE id = $1", [doc.id])
+    return
+  }
+
+  if (doc.onboarding_step === 'confirm' && doc.name && doc.specialty && doc.clinic_name) {
+    await sendWhatsAppButtons(
+      phone,
+      `Welcome back. Please confirm your details:\n\n` +
+      `*Name:* ${drName}\n` +
+      `*Specialty:* ${doc.specialty}\n` +
+      `*Clinic:* ${doc.clinic_name}\n\n` +
+      `Is this correct?`,
+      [
+        { id: 'CONFIRM_YES', title: 'Yes, confirm' },
+        { id: 'CONFIRM_NO', title: 'Start over' },
+      ]
+    )
+    return
+  }
+
+  const prompts: Record<string, string> = {
+    name: 'Let\'s continue setting up. What is your full name?',
+    specialty: `Welcome back${drName ? ', ' + drName : ''}. What is your specialty?`,
+    clinic_name: `Welcome back${drName ? ', ' + drName : ''}. What is your clinic name?`,
+  }
+  const msg = prompts[doc.onboarding_step] || 'Let\'s continue setting up. What is your full name?'
   await sendWhatsAppMessage(phone, msg)
 }
 
@@ -389,7 +563,7 @@ async function handleClinicCode(
     [doctor.id]
   )
 
-  const welcomeText = `Welcome to ${doctor.clinic_name || doctor.name}'s clinic! 🏥\nHow can we help you today?`
+  const welcomeText = `Welcome to *${doctor.clinic_name || formatDrName(doctor.name || '')}*.\nHow can we help you today?`
 
   if (menuProtocols.rows.length > 0) {
     await sendWhatsAppMenu(
@@ -398,7 +572,7 @@ async function handleClinicCode(
       menuProtocols.rows.map((p) => ({ id: p.id, title: p.title }))
     )
   } else {
-    await sendWhatsAppMessage(phone, welcomeText + '\n\nPlease type your query and the doctor will respond shortly.')
+    await sendWhatsAppMessage(phone, welcomeText + '\n\nType your query and the doctor will respond shortly.')
   }
 
   console.log(`[webhook][${requestId}] patient ${phone} joined doctor ${doctor.id} via ${code}`)
@@ -432,7 +606,7 @@ async function handleProtocolMatching(
 
     await sendWhatsAppMenu(
       phone,
-      `Hi! I'm the assistant for ${doc?.clinic_name ?? doc?.name ?? 'the clinic'}. How can I help you?`,
+      `Welcome to *${doc?.clinic_name ?? formatDrName(doc?.name ?? '')}*. How can we help you?`,
       menuProtocols.rows.map((p) => ({ id: p.id, title: p.title }))
     )
 
