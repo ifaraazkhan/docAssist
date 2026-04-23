@@ -190,15 +190,15 @@ export default function ProtocolsPage() {
                             role="switch"
                             aria-checked={proto.isActive}
                             className={cn(
-                              "w-10 h-6 rounded-full transition-colors relative flex-shrink-0",
-                              proto.isActive ? "bg-brand-500" : "bg-gray-200"
+                              "w-11 h-[26px] rounded-full transition-colors relative flex-shrink-0",
+                              proto.isActive ? "bg-brand-500" : "bg-gray-300"
                             )}
                             aria-label={proto.isActive ? "Deactivate" : "Activate"}
                           >
                             <span
                               className={cn(
-                                "absolute top-0.5 w-5 h-5 bg-white rounded-full shadow-sm transition-transform",
-                                proto.isActive ? "translate-x-[18px]" : "translate-x-0.5"
+                                "absolute top-[3px] left-[3px] w-5 h-5 bg-white rounded-full shadow transition-transform",
+                                proto.isActive ? "translate-x-[18px]" : "translate-x-0"
                               )}
                             />
                           </button>

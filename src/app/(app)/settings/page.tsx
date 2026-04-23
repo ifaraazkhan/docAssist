@@ -357,14 +357,14 @@ export default function SettingsPage() {
                 role="switch"
                 aria-checked={clinicClosed}
                 className={cn(
-                  "w-10 h-6 rounded-full transition-colors relative flex-shrink-0",
-                  clinicClosed ? "bg-red-500" : "bg-gray-200"
+                  "w-11 h-[26px] rounded-full transition-colors relative flex-shrink-0",
+                  clinicClosed ? "bg-red-500" : "bg-gray-300"
                 )}
               >
                 <span
                   className={cn(
-                    "absolute top-0.5 w-5 h-5 bg-white rounded-full shadow-sm transition-transform",
-                    clinicClosed ? "translate-x-[18px]" : "translate-x-0.5"
+                    "absolute top-[3px] left-[3px] w-5 h-5 bg-white rounded-full shadow transition-transform",
+                    clinicClosed ? "translate-x-[18px]" : "translate-x-0"
                   )}
                 />
               </button>

@@ -194,13 +194,13 @@ export default function NewProtocolPage() {
                 aria-label="Add to WhatsApp Menu"
                 onClick={() => { setAddToMenu(!addToMenu); tap(); }}
                 className={cn(
-                  "w-10 h-6 rounded-full transition-colors relative flex-shrink-0",
-                  addToMenu ? "bg-brand-500" : "bg-gray-200"
+                  "w-11 h-[26px] rounded-full transition-colors relative flex-shrink-0",
+                  addToMenu ? "bg-brand-500" : "bg-gray-300"
                 )}
               >
                 <span className={cn(
-                  "absolute top-0.5 w-5 h-5 bg-white rounded-full shadow-sm transition-transform",
-                  addToMenu ? "translate-x-[18px]" : "translate-x-0.5"
+                  "absolute top-[3px] left-[3px] w-5 h-5 bg-white rounded-full shadow transition-transform",
+                  addToMenu ? "translate-x-[18px]" : "translate-x-0"
                 )} />
               </button>
             </div>
@@ -218,13 +218,13 @@ export default function NewProtocolPage() {
                 aria-label="Protocol active"
                 onClick={() => { setIsActive(!isActive); tap(); }}
                 className={cn(
-                  "w-10 h-6 rounded-full transition-colors relative flex-shrink-0",
-                  isActive ? "bg-brand-500" : "bg-gray-200"
+                  "w-11 h-[26px] rounded-full transition-colors relative flex-shrink-0",
+                  isActive ? "bg-brand-500" : "bg-gray-300"
                 )}
               >
                 <span className={cn(
-                  "absolute top-0.5 w-5 h-5 bg-white rounded-full shadow-sm transition-transform",
-                  isActive ? "translate-x-[18px]" : "translate-x-0.5"
+                  "absolute top-[3px] left-[3px] w-5 h-5 bg-white rounded-full shadow transition-transform",
+                  isActive ? "translate-x-[18px]" : "translate-x-0"
                 )} />
               </button>
             </div>
