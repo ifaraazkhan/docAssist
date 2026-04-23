@@ -3,7 +3,7 @@ import crypto from 'crypto'
 import { query, withTransaction } from '../lib/db'
 import { normalizePhone } from '../lib/phone'
 import { signToken } from '../lib/jwt'
-import { sendWhatsAppMessage, sendWhatsAppMenu, sendWhatsAppButtons, sendWhatsAppSpecialtyList } from '../lib/whatsapp'
+import { sendWhatsAppMessage, sendWhatsAppMenu, sendWhatsAppButtons, sendWhatsAppSpecialtyList, sendWhatsAppCTAButton } from '../lib/whatsapp'
 import { webhookVerify } from '../middleware/webhookVerify'
 import { generateDoctorCode, generateSlug } from '../lib/clinic-code'
 
@@ -138,11 +138,11 @@ router.post('/', webhookVerify, async (req: Request, res: Response) => {
           [token, doc.id, 'login', expiresAt]
         )
         const link = `${process.env.APP_URL || 'http://localhost:3000'}/auth/verify?token=${token}`
-        await sendWhatsAppMessage(
+        await sendWhatsAppCTAButton(
           from,
-          `Welcome back, ${formatDrName(doc.name || '')}.\n\n` +
-          `Open your DrCliniq dashboard:\n${link}\n\n` +
-          `_Link expires in 60 minutes._`
+          `Welcome back, ${formatDrName(doc.name || '')}.\n\n_Link expires in 60 minutes._`,
+          'Open Dashboard',
+          link
         )
       }
       res.status(200).send('OK')
@@ -430,15 +430,14 @@ async function handleDoctorOnboarding(
 
       const link = `${process.env.APP_URL || 'http://localhost:3000'}/auth/verify?token=${token}`
 
-      await sendWhatsAppMessage(
+      await sendWhatsAppCTAButton(
         phone,
         `Your clinic is now live on DrCliniq.\n\n` +
         `*Clinic code:* ${doctorCode}\n\n` +
-        `*Next steps:*\n` +
-        `1. Open your dashboard\n${link}\n` +
-        `2. Set up auto-reply protocols\n` +
-        `3. Share your clinic code with patients from the app\n\n` +
-        `_Link expires in 60 minutes._`
+        `Open your dashboard to set up auto-reply protocols and share your clinic code with patients.\n\n` +
+        `_Link expires in 60 minutes._`,
+        'Open Dashboard',
+        link
       )
 
       console.log(`[webhook][${requestId}] onboarding complete: code=${doctorCode} slug=${slug}`)
