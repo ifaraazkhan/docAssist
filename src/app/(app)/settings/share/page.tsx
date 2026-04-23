@@ -24,12 +24,10 @@ export default function SharePage() {
   const posterRef = useRef<HTMLDivElement>(null);
 
   const doctorCode = data?.doctorCode ?? doctor.doctorCode;
-  const phone = doctor.phone?.replace(/\D/g, "") ?? "";
 
-  // QR encodes wa.me link with clinic code as pre-filled message
-  const qrValue = data?.qrData ?? `https://wa.me/${phone}?text=${encodeURIComponent(doctorCode ?? "")}`;
-  // Share link — always wa.me so it opens WhatsApp directly
-  const shareUrl = `https://wa.me/${phone}?text=${encodeURIComponent(doctorCode ?? "")}`;
+  // QR and share link — use API response (points to DrCliniq business number)
+  const qrValue = data?.qrData ?? "";
+  const shareUrl = data?.qrData ?? "";
 
   const clinicName = titleCase(doctor.clinicName ?? doctor.name ?? "My Clinic");
   const doctorName = titleCase(doctor.name ?? "Doctor");
@@ -55,8 +53,8 @@ export default function SharePage() {
     if (navigator.share) {
       try {
         await navigator.share({
-          title: `${clinicName} on WhatsApp`,
-          text: `Message ${clinicName} on WhatsApp for instant health advice`,
+          title: clinicName,
+          text: `*${clinicName}* — Message us on WhatsApp for appointments and health queries.`,
           url: shareUrl,
         });
       } catch {

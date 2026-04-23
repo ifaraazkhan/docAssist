@@ -129,21 +129,28 @@ router.post('/', webhookVerify, async (req: Request, res: Response) => {
     if (doctorCheck.rows.length > 0) {
       const doc = doctorCheck.rows[0]
       if (doc.onboarding_complete) {
-        // Send magic link
-        const token = crypto.randomBytes(32).toString('hex')
-        const expiresAt = new Date(Date.now() + 60 * 60 * 1000)
-        await query('UPDATE magic_links SET used = true WHERE doctor_id = $1 AND used = false', [doc.id])
-        await query(
-          'INSERT INTO magic_links (token, doctor_id, purpose, expires_at) VALUES ($1, $2, $3, $4)',
-          [token, doc.id, 'login', expiresAt]
-        )
-        const link = `${process.env.APP_URL || 'http://localhost:3000'}/auth/verify?token=${token}`
-        await sendWhatsAppCTAButton(
-          from,
-          `Welcome back, ${formatDrName(doc.name || '')}.\n\n_Link expires in 60 minutes._`,
-          'Open Dashboard',
-          link
-        )
+        const lowerText = trimmedText.toLowerCase()
+        const wantsLogin = GREETINGS.includes(lowerText) ||
+          ['login', 'dashboard', 'link', 'open', 'app'].includes(lowerText)
+
+        if (wantsLogin) {
+          // Send magic link
+          const token = crypto.randomBytes(32).toString('hex')
+          const expiresAt = new Date(Date.now() + 60 * 60 * 1000)
+          await query('UPDATE magic_links SET used = true WHERE doctor_id = $1 AND used = false', [doc.id])
+          await query(
+            'INSERT INTO magic_links (token, doctor_id, purpose, expires_at) VALUES ($1, $2, $3, $4)',
+            [token, doc.id, 'login', expiresAt]
+          )
+          const link = `${process.env.APP_URL || 'http://localhost:3000'}/auth/verify?token=${token}`
+          await sendWhatsAppCTAButton(
+            from,
+            `Welcome back, ${formatDrName(doc.name || '')}.\n\n_Link expires in 60 minutes._`,
+            'Open Dashboard',
+            link
+          )
+        }
+        // Silently ignore other messages from doctors (they use the PWA to chat)
       }
       res.status(200).send('OK')
       return
