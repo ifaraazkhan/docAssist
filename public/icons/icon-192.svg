@@ -9,5 +9,5 @@
     <rect x="-5" y="44" width="10" height="12" rx="2" fill="#0d9488"/>
     <rect x="-6" y="47" width="12" height="6" rx="2" fill="#0d9488"/>
   </g>
-  <text x="96" y="170" text-anchor="middle" fill="white" font-family="Georgia,serif" font-size="18" font-weight="bold" opacity="0.8">DocAssist</text>
+  <text x="96" y="170" text-anchor="middle" fill="white" font-family="Georgia,serif" font-size="18" font-weight="bold" opacity="0.8">DrCliniq</text>
 </svg>

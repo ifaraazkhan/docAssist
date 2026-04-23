@@ -1,0 +1,231 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ===== DrCliniq landing — editorial clinical design system ===== */
+@layer base {
+  :root {
+    --paper: oklch(0.985 0.005 95);
+    --paper-2: oklch(0.965 0.006 95);
+    --paper-3: oklch(0.94 0.007 95);
+    --ink: oklch(0.18 0.012 250);
+    --ink-2: oklch(0.32 0.01 250);
+    --ink-3: oklch(0.48 0.008 250);
+    --rule: oklch(0.88 0.008 250);
+    --rule-2: oklch(0.93 0.006 250);
+
+    --emerald: oklch(0.55 0.12 165);
+    --emerald-deep: oklch(0.42 0.11 165);
+    --emerald-soft: oklch(0.92 0.04 165);
+    --saffron: oklch(0.72 0.10 55);
+    --saffron-soft: oklch(0.94 0.04 65);
+    --crimson: oklch(0.58 0.16 25);
+
+    --accent: var(--emerald);
+    --accent-deep: var(--emerald-deep);
+    --accent-soft: var(--emerald-soft);
+
+    --serif: 'DM Sans', -apple-system, sans-serif;
+    --sans: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    --mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+
+    --fs-display: clamp(36px, 7.2vw, 104px);
+    --fs-h1: clamp(28px, 5vw, 72px);
+    --fs-h2: clamp(24px, 3.4vw, 48px);
+    --fs-h3: 22px;
+    --fs-body: 17px;
+    --fs-small: 13px;
+    --fs-micro: 11px;
+
+    --shadow-sm: 0 1px 2px rgba(20,30,40,0.04), 0 1px 1px rgba(20,30,40,0.03);
+    --shadow-md: 0 8px 24px -10px rgba(20,30,40,0.10), 0 2px 6px -2px rgba(20,30,40,0.06);
+    --shadow-lg: 0 30px 60px -30px rgba(20,30,40,0.18), 0 16px 30px -20px rgba(20,30,40,0.10);
+  }
+
+  html {
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--sans);
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+    font-feature-settings: 'ss01', 'cv11';
+    scroll-behavior: smooth;
+  }
+
+  body {
+    overflow-x: hidden;
+  }
+
+  ::selection {
+    background: var(--accent);
+    color: var(--paper);
+  }
+}
+
+/* ===== Typography ===== */
+.serif {
+  font-family: var(--serif);
+  font-weight: 400;
+  letter-spacing: -0.02em;
+  line-height: 1.08;
+  padding-bottom: 0.06em;
+}
+.mono {
+  font-family: var(--mono);
+  font-feature-settings: 'tnum';
+}
+
+/* ===== Container ===== */
+.container-ed {
+  width: 100%;
+  max-width: 1320px;
+  margin: 0 auto;
+  padding: 0 32px;
+}
+@media (max-width: 768px) {
+  .container-ed { padding: 0 20px; }
+}
+
+/* ===== Section labels ===== */
+.eyebrow {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.eyebrow::before {
+  content: '';
+  width: 18px;
+  height: 1px;
+  background: currentColor;
+  opacity: 0.6;
+}
+
+/* ===== Buttons ===== */
+.btn-ed {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 20px;
+  border-radius: 999px;
+  font-size: 14px;
+  font-weight: 500;
+  letter-spacing: -0.005em;
+  transition: transform 200ms cubic-bezier(.2,.8,.2,1), box-shadow 200ms, background 200ms;
+  white-space: nowrap;
+  cursor: pointer;
+  border: none;
+  font-family: inherit;
+}
+.btn-primary-ed {
+  background: var(--ink);
+  color: var(--paper);
+}
+.btn-primary-ed:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-md);
+}
+.btn-accent-ed {
+  background: var(--accent);
+  color: white;
+  font-weight: 500;
+}
+.btn-accent-ed:hover {
+  transform: translateY(-1px);
+  background: var(--accent-deep);
+}
+.btn-ghost-ed {
+  color: var(--ink);
+  border: 1px solid var(--rule);
+  background: var(--paper);
+}
+.btn-ghost-ed:hover {
+  border-color: var(--ink);
+}
+
+/* ===== Live dot ===== */
+.live-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--emerald);
+  position: relative;
+  display: inline-block;
+  flex-shrink: 0;
+}
+.live-dot::after {
+  content: '';
+  position: absolute;
+  inset: -3px;
+  border-radius: 50%;
+  background: var(--emerald);
+  opacity: 0.35;
+  animation: livePulse 1.6s ease-out infinite;
+}
+
+@keyframes livePulse {
+  0% { transform: scale(0.8); opacity: 0.4; }
+  100% { transform: scale(2.2); opacity: 0; }
+}
+
+/* ===== Underline reveal ===== */
+.u-link {
+  position: relative;
+  padding-bottom: 2px;
+}
+.u-link::after {
+  content: '';
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  height: 1px;
+  background: currentColor;
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform 300ms cubic-bezier(.2,.8,.2,1);
+}
+.u-link:hover::after {
+  transform: scaleX(1);
+}
+
+/* ===== Marquee ===== */
+@keyframes marquee {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+
+/* ===== Animations ===== */
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes bounce-dot {
+  0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
+  30% { transform: translateY(-3px); opacity: 1; }
+}
+
+/* ===== Range input ===== */
+input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+}
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 1px;
+  height: 1px;
+  background: transparent;
+}
+
+/* ===== Phone chat scrollbar ===== */
+.phone-chat::-webkit-scrollbar {
+  width: 0;
+}
+.phone-chat {
+  scrollbar-width: none;
+}

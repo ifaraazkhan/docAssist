@@ -2,98 +2,89 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Save, Menu, Lightbulb, ShieldCheck, X } from "lucide-react";
-import Header from "@/components/Header";
+import { motion } from "framer-motion";
+import { toast } from "sonner";
+import { ArrowLeft, X } from "lucide-react";
 import { createProtocol } from "@/lib/api";
-import { getDoctor } from "@/lib/auth";
+import { tap, success as hapticSuccess } from "@/lib/haptics";
+import { cn } from "@/lib/cn";
 
-const suggestedProtocols = [
-  { title: "Fever Management", keywords: "fever, bukhar, temperature, hot" },
-  { title: "Diarrhea & Vomiting", keywords: "diarrhea, vomiting, loose motion, ulti" },
-  { title: "Cold & Cough", keywords: "cold, cough, sardi, khansi" },
-  { title: "Headache", keywords: "headache, sir dard, migraine" },
-  { title: "Skin Rash", keywords: "rash, khujli, itching, allergy" },
-  { title: "Clinic Timings", keywords: "time, timing, open, close, hours" },
-];
+const MAX_REPLY_LENGTH = 4096;
 
 export default function NewProtocolPage() {
   const router = useRouter();
-  const doctor = getDoctor();
 
   const [title, setTitle] = useState("");
-  const [keywords, setKeywords] = useState("");
+  const [keywords, setKeywords] = useState<string[]>([]);
+  const [keywordInput, setKeywordInput] = useState("");
   const [replyText, setReplyText] = useState("");
+  const [disclaimer, setDisclaimer] = useState("");
   const [addToMenu, setAddToMenu] = useState(true);
-  const [showSuggestions, setShowSuggestions] = useState(true);
+  const [isActive, setIsActive] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
-  const handleSuggestion = (suggestion: (typeof suggestedProtocols)[0]) => {
-    setTitle(suggestion.title);
-    setKeywords(suggestion.keywords);
-    setShowSuggestions(false);
+  const handleAddKeyword = () => {
+    const word = keywordInput.trim().toLowerCase();
+    if (word && !keywords.includes(word)) {
+      setKeywords([...keywords, word]);
+      tap();
+    }
+    setKeywordInput("");
+  };
+
+  const handleRemoveKeyword = (kw: string) => {
+    tap();
+    setKeywords(keywords.filter((k) => k !== kw));
   };
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!doctor) return;
+    if (!title.trim() || keywords.length === 0 || !replyText.trim()) {
+      setError("Title, keywords, and reply are required");
+      return;
+    }
     setError("");
     setSaving(true);
     try {
-      await createProtocol({ doctorId: doctor.id, title, keywords, replyText, addToMenu });
+      await createProtocol({
+        title: title.trim(),
+        keywords,
+        replyText: replyText.trim(),
+        disclaimer: disclaimer.trim() || undefined,
+        addToMenu,
+        isActive,
+      });
+      hapticSuccess();
+      toast("Protocol saved");
       router.push("/protocols");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to save protocol");
+      setError(err instanceof Error ? err.message : "Failed to save");
     } finally {
       setSaving(false);
     }
   };
 
-  const disclaimer =
-    "⚠️ This is general guidance only. If symptoms persist or worsen, please visit the clinic or call for an emergency appointment.";
-
   return (
-    <>
-      <Header title="New Protocol" showBack />
+    <div className="min-h-dvh bg-[var(--bg)]">
+      {/* Header */}
+      <div className="bg-white border-b border-[var(--border)] px-4 py-3 flex items-center gap-3">
+        <button
+          onClick={() => router.back()}
+          className="p-1 -ml-1 min-h-[44px] min-w-[44px] flex items-center justify-center"
+          aria-label="Go back"
+        >
+          <ArrowLeft size={20} className="text-text-primary" />
+        </button>
+        <h1 className="font-semibold text-text-primary">New Protocol</h1>
+      </div>
 
-      <div className="page-container">
-        {/* Suggestion chips */}
-        {showSuggestions && (
-          <div className="card p-4 mb-5 animate-fade-in">
-            <div className="flex items-center justify-between mb-3">
-              <div className="flex items-center gap-2">
-                <Lightbulb size={14} className="text-amber-500" />
-                <span className="text-xs font-semibold text-slate-700">
-                  Quick Start — Common Protocols
-                </span>
-              </div>
-              <button
-                onClick={() => setShowSuggestions(false)}
-                className="text-slate-400 hover:text-slate-600"
-                aria-label="Close suggestions"
-              >
-                <X size={14} />
-              </button>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              {suggestedProtocols.map((s) => (
-                <button
-                  key={s.title}
-                  onClick={() => handleSuggestion(s)}
-                  className="text-xs px-3 py-1.5 bg-brand-50 text-brand-700 rounded-lg border border-brand-100 hover:bg-brand-100 transition-colors"
-                >
-                  {s.title}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Form */}
-        <form onSubmit={handleSave} className="space-y-5 animate-fade-in stagger-2">
-          <div>
-            <label className="text-xs font-semibold text-slate-700 mb-1.5 block">
-              Protocol Title
+      <div className="page-container max-w-sm mx-auto">
+        <form onSubmit={handleSave} className="space-y-5">
+          {/* Title */}
+          <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
+            <label className="text-sm font-medium text-text-primary mb-1.5 block">
+              Protocol Name *
             </label>
             <input
               type="text"
@@ -101,96 +92,159 @@ export default function NewProtocolPage() {
               onChange={(e) => setTitle(e.target.value)}
               placeholder="e.g. Fever Management"
               className="input-field"
-              required
             />
-            <p className="text-[10px] text-slate-400 mt-1">
-              This becomes the button label in the WhatsApp menu
-            </p>
-          </div>
+          </motion.div>
 
-          <div>
-            <label className="text-xs font-semibold text-slate-700 mb-1.5 block">
-              Trigger Keywords
+          {/* Keywords */}
+          <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }}>
+            <label className="text-sm font-medium text-text-primary mb-1.5 block">
+              Trigger Keywords *
             </label>
-            <input
-              type="text"
-              value={keywords}
-              onChange={(e) => setKeywords(e.target.value)}
-              placeholder="fever, bukhar, temperature, hot"
-              className="input-field"
-              required
-            />
-            <p className="text-[10px] text-slate-400 mt-1">
-              Comma-separated. Include Hindi/regional terms for better matching.
+            <div className="flex gap-2 mb-2">
+              <input
+                type="text"
+                value={keywordInput}
+                onChange={(e) => setKeywordInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    handleAddKeyword();
+                  }
+                }}
+                placeholder="Type keyword + Enter"
+                className="input-field flex-1"
+              />
+            </div>
+            {keywords.length > 0 && (
+              <div className="flex flex-wrap gap-2">
+                {keywords.map((kw) => (
+                  <span
+                    key={kw}
+                    className="inline-flex items-center gap-1 px-2.5 py-1 bg-brand-50 text-brand-700 rounded-lg text-xs font-medium"
+                  >
+                    {kw}
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveKeyword(kw)}
+                      className="p-0.5 min-w-[24px] min-h-[24px] flex items-center justify-center"
+                      aria-label={`Remove ${kw}`}
+                    >
+                      <X size={12} />
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
+            <p className="text-[11px] text-text-secondary mt-1.5">
+              Include Hindi/regional terms for better matching
             </p>
-          </div>
+          </motion.div>
 
-          <div>
-            <label className="text-xs font-semibold text-slate-700 mb-1.5 block">
-              Auto-Reply Message
-            </label>
+          {/* Reply Text */}
+          <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}>
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="text-sm font-medium text-text-primary">
+                Reply Message *
+              </label>
+              <span className={cn(
+                "text-xs",
+                replyText.length > MAX_REPLY_LENGTH ? "text-urgent" : "text-text-secondary"
+              )}>
+                {replyText.length} / {MAX_REPLY_LENGTH}
+              </span>
+            </div>
             <textarea
               value={replyText}
               onChange={(e) => setReplyText(e.target.value)}
-              placeholder="Enter the medical advice that will be sent to the patient..."
-              rows={8}
+              placeholder="Enter the auto-reply message..."
+              rows={6}
               className="input-field resize-none leading-relaxed"
-              required
+              maxLength={MAX_REPLY_LENGTH}
             />
-            <p className="text-[10px] text-slate-400 mt-1">
-              Use numbered lists and emojis for readability. Supports WhatsApp formatting (*bold*, _italic_).
-            </p>
-          </div>
+          </motion.div>
 
-          {/* Disclaimer preview */}
-          <div className="card p-3.5 bg-amber-50/50 border-amber-200/50">
-            <div className="flex items-start gap-2.5">
-              <ShieldCheck size={14} className="text-amber-600 mt-0.5 flex-shrink-0" />
+          {/* Disclaimer */}
+          <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }}>
+            <label className="text-sm font-medium text-text-primary mb-1.5 block">
+              Disclaimer
+            </label>
+            <input
+              type="text"
+              value={disclaimer}
+              onChange={(e) => setDisclaimer(e.target.value)}
+              placeholder="Auto-appended to the reply"
+              className="input-field"
+            />
+          </motion.div>
+
+          {/* Toggles */}
+          <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}
+            className="space-y-3"
+          >
+            {/* Add to Menu */}
+            <div className="bg-white rounded-xl p-4 flex items-center justify-between border border-gray-100">
               <div>
-                <p className="text-[10px] font-semibold text-amber-800 uppercase tracking-wider mb-1">
-                  Auto-appended Disclaimer
-                </p>
-                <p className="text-[11px] text-amber-700 leading-relaxed">{disclaimer}</p>
+                <p className="text-sm font-medium text-text-primary">Add to WhatsApp Menu</p>
+                <p className="text-[11px] text-text-secondary mt-0.5">Patients see this as a button</p>
               </div>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={addToMenu}
+                aria-label="Add to WhatsApp Menu"
+                onClick={() => { setAddToMenu(!addToMenu); tap(); }}
+                className={cn(
+                  "w-10 h-6 rounded-full transition-colors relative flex-shrink-0",
+                  addToMenu ? "bg-brand-500" : "bg-gray-200"
+                )}
+              >
+                <span className={cn(
+                  "absolute top-0.5 w-5 h-5 bg-white rounded-full shadow-sm transition-transform",
+                  addToMenu ? "translate-x-[18px]" : "translate-x-0.5"
+                )} />
+              </button>
             </div>
-          </div>
 
-          {/* Add to menu toggle */}
-          <div className="card p-4 flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="w-9 h-9 bg-brand-50 rounded-lg flex items-center justify-center">
-                <Menu size={16} className="text-brand-600" />
-              </div>
+            {/* Active */}
+            <div className="bg-white rounded-xl p-4 flex items-center justify-between border border-gray-100">
               <div>
-                <p className="text-sm font-medium text-slate-800">Add to WhatsApp Menu</p>
-                <p className="text-[10px] text-slate-400 mt-0.5">
-                  Patients see this as a button option
-                </p>
+                <p className="text-sm font-medium text-text-primary">Active</p>
+                <p className="text-[11px] text-text-secondary mt-0.5">Auto-replies when matched</p>
               </div>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={isActive}
+                aria-label="Protocol active"
+                onClick={() => { setIsActive(!isActive); tap(); }}
+                className={cn(
+                  "w-10 h-6 rounded-full transition-colors relative flex-shrink-0",
+                  isActive ? "bg-brand-500" : "bg-gray-200"
+                )}
+              >
+                <span className={cn(
+                  "absolute top-0.5 w-5 h-5 bg-white rounded-full shadow-sm transition-transform",
+                  isActive ? "translate-x-[18px]" : "translate-x-0.5"
+                )} />
+              </button>
             </div>
-            <button
-              type="button"
-              onClick={() => setAddToMenu(!addToMenu)}
-              className={`w-12 h-7 rounded-full transition-all duration-300 relative ${
-                addToMenu ? "bg-brand-500 shadow-soft" : "bg-slate-200"
-              }`}
-            >
-              <div
-                className={`absolute top-0.5 w-6 h-6 bg-white rounded-full shadow-card transition-all duration-300 ${
-                  addToMenu ? "left-[22px]" : "left-0.5"
-                }`}
-              />
-            </button>
-          </div>
+          </motion.div>
 
-          {error && <p className="text-xs text-red-500 font-medium">{error}</p>}
+          {error && <p className="text-sm text-urgent font-medium">{error}</p>}
 
-          <button type="submit" className="btn-primary w-full" disabled={saving}>
-            <Save size={16} />
-            {saving ? "Saving..." : "Save Protocol"}
+          <button
+            type="submit"
+            disabled={saving}
+            className="w-full flex items-center justify-center gap-2 px-4 py-3.5 bg-brand-500 text-white font-semibold rounded-xl text-sm min-h-[48px] disabled:opacity-50"
+          >
+            {saving ? (
+              <span className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+            ) : (
+              "Save Protocol"
+            )}
           </button>
         </form>
       </div>
-    </>
+    </div>
   );
 }

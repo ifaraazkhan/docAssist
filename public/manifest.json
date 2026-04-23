@@ -1,24 +1,25 @@
 {
-  "name": "DocAssist",
-  "short_name": "DocAssist",
-  "description": "Smart WhatsApp assistant for doctors — automate patient queries, triage messages, and manage clinical protocols.",
-  "start_url": "/dashboard",
+  "id": "/",
+  "name": "DrCliniq",
+  "short_name": "DrCliniq",
+  "description": "Smart WhatsApp assistant for Indian clinics",
+  "start_url": "/",
   "display": "standalone",
-  "background_color": "#faf9f7",
+  "background_color": "#fafafa",
   "theme_color": "#0d9488",
   "orientation": "portrait",
   "icons": [
     {
-      "src": "/icons/icon-192.png",
+      "src": "/icons/icon-192.svg",
       "sizes": "192x192",
-      "type": "image/png",
-      "purpose": "any maskable"
+      "type": "image/svg+xml",
+      "purpose": "any"
     },
     {
-      "src": "/icons/icon-512.png",
-      "sizes": "512x512",
-      "type": "image/png",
-      "purpose": "any maskable"
+      "src": "/icons/icon-192.svg",
+      "sizes": "192x192",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
     }
   ]
 }

@@ -1,169 +1,342 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { motion } from "framer-motion";
+import useSWR from "swr";
+import Skeleton from "react-loading-skeleton";
+import "react-loading-skeleton/dist/skeleton.css";
 import {
-  AlertCircle,
+  Search,
+  Bell,
+  Plus,
+  QrCode,
   MessageSquare,
-  Clock,
-  MailOpen,
-  Zap,
-  Activity,
+  FileText,
+  Users,
+  BarChart3,
+  LayoutGrid,
+  Sparkles,
+  Newspaper,
 } from "lucide-react";
-import Header from "@/components/Header";
-import PatientListItem from "@/components/PatientListItem";
-import StatCard from "@/components/StatCard";
 import { getPatients, type Patient } from "@/lib/api";
-import { getDoctor } from "@/lib/auth";
+import { useDoctor } from "@/lib/doctor-context";
+import { tap } from "@/lib/haptics";
+import { cn } from "@/lib/cn";
+import { formatDistanceToNow } from "date-fns";
 
 type FilterType = "all" | "urgent" | "unread";
 
+const AVATAR_COLORS = [
+  "from-indigo-400 to-indigo-500",
+  "from-amber-400 to-amber-500",
+  "from-teal-400 to-teal-500",
+  "from-rose-400 to-rose-500",
+  "from-violet-400 to-violet-500",
+];
+
+function getGreeting() {
+  const h = new Date().getHours();
+  if (h < 12) return "Good morning";
+  if (h < 17) return "Good afternoon";
+  return "Good evening";
+}
+
+function getInitial(name: string | null) {
+  return name ? name.charAt(0).toUpperCase() : "?";
+}
+
+function getAvatarColor(id: string, isUrgent: boolean) {
+  if (isUrgent) return "from-red-400 to-red-500";
+  const hash = id.split("").reduce((a, c) => a + c.charCodeAt(0), 0);
+  return AVATAR_COLORS[hash % AVATAR_COLORS.length];
+}
+
+function relativeTime(dateStr: string | null) {
+  if (!dateStr) return "";
+  try {
+    return formatDistanceToNow(new Date(dateStr), { addSuffix: false });
+  } catch {
+    return "";
+  }
+}
+
 export default function DashboardPage() {
-  const [activeFilter, setActiveFilter] = useState<FilterType>("all");
-  const [patients, setPatients] = useState<Patient[]>([]);
-  const [loading, setLoading] = useState(true);
+  const router = useRouter();
+  const doctor = useDoctor();
+  const [filter, setFilter] = useState<FilterType>("all");
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
 
-  const doctor = getDoctor();
+  const { data, isLoading } = useSWR(
+    ["patients", filter],
+    () => getPatients(filter === "all" ? undefined : filter),
+    { revalidateOnFocus: true }
+  );
 
-  useEffect(() => {
-    if (!doctor) return;
-    getPatients(doctor.id)
-      .then(setPatients)
-      .catch(console.error)
-      .finally(() => setLoading(false));
-  }, [doctor?.id]);
+  const patients = data?.patients ?? [];
 
-  const filteredPatients = patients.filter((p) => {
-    if (activeFilter === "urgent") return p.isUrgent;
-    if (activeFilter === "unread") return p.unreadCount > 0;
-    return true;
-  });
+  const filteredPatients = searchQuery
+    ? patients.filter(
+        (p) =>
+          p.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          p.phone.includes(searchQuery)
+      )
+    : patients;
+
+  const firstName = doctor.name?.replace("Dr.", "").trim().split(" ")[0] ?? "Doctor";
 
   const urgentCount = patients.filter((p) => p.isUrgent).length;
   const unreadCount = patients.filter((p) => p.unreadCount > 0).length;
 
-  const filters: { key: FilterType; label: string; icon: React.ReactNode; count?: number }[] = [
-    { key: "all", label: "Recent", icon: <Clock size={14} /> },
-    { key: "urgent", label: "Urgent", icon: <AlertCircle size={14} />, count: urgentCount },
-    { key: "unread", label: "Unread", icon: <MailOpen size={14} />, count: unreadCount },
+  const tabs: { key: FilterType; label: string; count: number }[] = [
+    { key: "all", label: "All", count: patients.length },
+    { key: "urgent", label: "Urgent", count: urgentCount },
+    { key: "unread", label: "Unread", count: unreadCount },
   ];
 
   return (
-    <>
-      <Header
-        title={`Hi, ${doctor?.name?.replace("Dr.", "").trim().split(" ")[0] ?? "Doctor"}`}
-        subtitle={doctor?.clinicName ?? ""}
-        rightAction={
-          <div className="flex items-center gap-1.5 px-2.5 py-1 bg-brand-50 rounded-lg border border-brand-100">
-            <div className="w-2 h-2 bg-brand-500 rounded-full animate-pulse-soft" />
-            <span className="text-[10px] font-semibold text-brand-700 uppercase tracking-wider">
-              Pro
-            </span>
-          </div>
-        }
-      />
-
-      <div className="page-container">
-        {/* Stats row */}
-        <div className="grid grid-cols-2 gap-3 mb-6 animate-fade-in">
-          <StatCard
-            label="Patients via bot"
-            value={patients.length > 0 ? patients.length : "—"}
-            icon={<Zap size={18} />}
-            accent="brand"
-          />
-          <StatCard
-            label="Needs your attention"
-            value={urgentCount}
-            icon={<AlertCircle size={18} />}
-            accent="urgent"
-          />
+    <div className="page-container">
+      {/* Header */}
+      <div className="flex items-center justify-between mb-5">
+        <div>
+          <h1 className="text-xl font-bold text-text-primary">
+            {getGreeting()}, Dr. {firstName}
+          </h1>
+          <p className="text-sm text-text-secondary">{doctor.clinicName}</p>
         </div>
-
-        {/* Quick insight bar */}
-        <div className="card p-3 mb-6 flex items-center gap-3 animate-fade-in stagger-2">
-          <div className="w-8 h-8 bg-slate-50 rounded-lg flex items-center justify-center flex-shrink-0">
-            <Activity size={16} className="text-slate-500" />
-          </div>
-          <p className="text-xs text-slate-700 leading-relaxed">
-            {urgentCount > 0 ? (
-              <>
-                <span className="text-urgent-text font-semibold">{urgentCount} patient{urgentCount > 1 ? "s" : ""}</span>
-                {" "}need{urgentCount === 1 ? "s" : ""} your personal reply.{" "}
-                <span className="text-slate-500">Open the chat and tap <strong>Mark Resolved</strong> once done.</span>
-              </>
-            ) : patients.length > 0 ? (
-              <>
-                All <span className="font-semibold text-slate-900">{patients.length}</span> chats
-                {" "}reviewed — you&apos;re all caught up!
-              </>
-            ) : (
-              <>No patient messages yet.</>
+        <div className="flex items-center gap-1">
+          <button
+            onClick={() => {
+              tap();
+              setSearchOpen(!searchOpen);
+            }}
+            className="p-2.5 rounded-xl text-text-secondary min-h-[44px] min-w-[44px] flex items-center justify-center"
+            aria-label="Search patients"
+          >
+            <Search size={20} />
+          </button>
+          <button
+            className="relative p-2.5 rounded-xl text-text-secondary min-h-[44px] min-w-[44px] flex items-center justify-center"
+            aria-label="Notifications"
+          >
+            <Bell size={20} />
+            {unreadCount > 0 && (
+              <span className="absolute top-2 right-2 w-2 h-2 bg-urgent rounded-full" />
             )}
-          </p>
-        </div>
-
-        {/* Filter tabs */}
-        <div className="flex gap-2 mb-4 animate-fade-in stagger-3">
-          {filters.map((filter) => (
-            <button
-              key={filter.key}
-              onClick={() => setActiveFilter(filter.key)}
-              className={`flex items-center gap-1.5 px-3.5 min-h-[44px] rounded-xl text-xs font-semibold transition-all duration-200 ${
-                activeFilter === filter.key
-                  ? filter.key === "urgent"
-                    ? "bg-urgent-bg text-urgent-text shadow-soft border border-red-100"
-                    : "bg-brand-50 text-brand-700 shadow-soft border border-brand-100"
-                  : "bg-white text-slate-600 hover:text-slate-800 hover:bg-slate-50 border border-slate-200"
-              }`}
-            >
-              {filter.icon}
-              {filter.label}
-              {filter.count !== undefined && filter.count > 0 && (
-                <span
-                  className={`ml-0.5 w-4 h-4 rounded-full text-[10px] flex items-center justify-center font-bold ${
-                    activeFilter === filter.key
-                      ? filter.key === "urgent"
-                        ? "bg-urgent text-white"
-                        : "bg-brand-500 text-white"
-                      : "bg-slate-200 text-slate-600"
-                  }`}
-                >
-                  {filter.count}
-                </span>
-              )}
-            </button>
-          ))}
-        </div>
-
-        {/* Patient list */}
-        <div className="space-y-2">
-          {loading ? (
-            <div className="card p-8 text-center animate-fade-in">
-              <p className="text-sm text-slate-400">Loading patients...</p>
-            </div>
-          ) : filteredPatients.length > 0 ? (
-            filteredPatients.map((patient, i) => (
-              <div key={patient.id} className={`stagger-${Math.min(i + 1, 6)}`}>
-                <PatientListItem patient={patient} />
-              </div>
-            ))
-          ) : (
-            <div className="card p-8 text-center animate-fade-in">
-              <div className="w-12 h-12 bg-slate-100 rounded-xl flex items-center justify-center mx-auto mb-3">
-                <MessageSquare size={20} className="text-slate-400" />
-              </div>
-              <p className="text-sm font-semibold text-slate-700">
-                {patients.length === 0 ? "No patients yet" : "No messages in this category"}
-              </p>
-              <p className="text-xs text-slate-500 mt-1">
-                {patients.length === 0
-                  ? "Patients will appear here when they message your WhatsApp number"
-                  : "All caught up!"}
-              </p>
-            </div>
-          )}
+          </button>
         </div>
       </div>
-    </>
+
+      {/* Search bar */}
+      {searchOpen && (
+        <motion.div
+          initial={{ height: 0, opacity: 0 }}
+          animate={{ height: "auto", opacity: 1 }}
+          className="mb-4"
+        >
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Search by name or phone..."
+            className="input-field"
+            autoFocus
+            aria-label="Search patients"
+          />
+        </motion.div>
+      )}
+
+      {/* Quick Actions — horizontal scroll cards */}
+      <div className="mb-5 -mx-4">
+        <div className="flex items-center justify-between px-4 mb-3">
+          <h2 className="text-[15px] font-bold text-text-primary tracking-tight">Quick Actions</h2>
+        </div>
+        <div className="flex gap-2.5 overflow-x-auto no-scrollbar px-4 snap-x snap-mandatory">
+          {[
+            {
+              icon: <LayoutGrid size={18} />,
+              title: "Manage Menu",
+              desc: "WhatsApp buttons",
+              bg: "bg-gradient-to-br from-blue-100 to-blue-200",
+              color: "text-blue-600",
+              href: "/protocols",
+            },
+            {
+              icon: <Plus size={18} />,
+              title: "New Protocol",
+              desc: "Create auto-reply",
+              bg: "bg-gradient-to-br from-violet-100 to-violet-200",
+              color: "text-violet-600",
+              href: "/protocols/new",
+            },
+            {
+              icon: <QrCode size={18} />,
+              title: "Share QR",
+              desc: "Clinic WhatsApp link",
+              bg: "bg-gradient-to-br from-teal-100 to-teal-200",
+              color: "text-teal-600",
+              href: "/settings/share",
+            },
+            {
+              icon: <BarChart3 size={18} />,
+              title: "Analytics",
+              desc: "Bot performance",
+              bg: "bg-gradient-to-br from-pink-100 to-pink-200",
+              color: "text-pink-600",
+              href: "/settings",
+            },
+            {
+              icon: <Sparkles size={18} />,
+              title: "AI Features",
+              desc: "Smart assistance",
+              bg: "bg-gradient-to-br from-amber-100 to-amber-200",
+              color: "text-amber-600",
+              href: "/settings",
+            },
+            {
+              icon: <Newspaper size={18} />,
+              title: "News & Updates",
+              desc: "What\u2019s new",
+              bg: "bg-gradient-to-br from-green-100 to-green-200",
+              color: "text-green-600",
+              href: "/settings",
+            },
+          ].map((action, i) => (
+            <motion.button
+              key={action.title}
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: i * 0.04 }}
+              onClick={() => {
+                tap();
+                router.push(action.href);
+              }}
+              className="min-w-[130px] flex-shrink-0 snap-start flex flex-col gap-3 p-4 bg-white rounded-2xl border border-gray-100 shadow-soft active:scale-[0.97] transition-transform"
+            >
+              <div className={cn("w-10 h-10 rounded-xl flex items-center justify-center", action.bg, action.color)}>
+                {action.icon}
+              </div>
+              <div className="text-left">
+                <p className="text-[13px] font-bold text-text-primary leading-tight">{action.title}</p>
+                <p className="text-[10px] text-text-secondary mt-0.5">{action.desc}</p>
+              </div>
+            </motion.button>
+          ))}
+        </div>
+      </div>
+
+      {/* Stat tabs */}
+      <div className="stat-tabs mb-4">
+        {tabs.map((t) => (
+          <button
+            key={t.key}
+            onClick={() => {
+              tap();
+              setFilter(t.key);
+            }}
+            className={cn("stat-tab", filter === t.key && "active")}
+          >
+            {t.label}
+            <span className="text-xs opacity-60">({t.count})</span>
+          </button>
+        ))}
+      </div>
+
+      {/* Patient list */}
+      <div>
+        {isLoading ? (
+          <div className="space-y-0">
+            {Array.from({ length: 5 }).map((_, i) => (
+              <div key={i} className="patient-row">
+                <Skeleton circle width={44} height={44} />
+                <div className="flex-1">
+                  <Skeleton width="60%" height={16} />
+                  <Skeleton width="80%" height={12} style={{ marginTop: 6 }} />
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : filteredPatients.length > 0 ? (
+          filteredPatients.map((patient, i) => (
+            <motion.button
+              key={patient.id}
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: i * 0.03 }}
+              onClick={() => {
+                tap();
+                router.push(`/patients/${patient.mappingId}`);
+              }}
+              className="patient-row w-full text-left"
+            >
+              {/* Avatar */}
+              <div
+                className={cn(
+                  "w-11 h-11 rounded-full bg-gradient-to-br flex items-center justify-center text-white font-bold text-sm flex-shrink-0",
+                  getAvatarColor(patient.id, patient.isUrgent)
+                )}
+              >
+                {getInitial(patient.name)}
+              </div>
+
+              {/* Content */}
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-semibold text-sm text-text-primary truncate">
+                    {patient.name || patient.phone}
+                  </span>
+                  <span className="text-[11px] text-text-secondary whitespace-nowrap flex-shrink-0">
+                    {relativeTime(patient.lastMessageTime)}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between gap-2 mt-0.5">
+                  <p className="text-xs text-text-secondary truncate">
+                    {patient.lastMessage || "No messages"}
+                  </p>
+                  <div className="flex items-center gap-1.5 flex-shrink-0">
+                    {patient.isUrgent && (
+                      <span className="badge badge-urgent text-[11px]">Urgent</span>
+                    )}
+                    {patient.unreadCount > 0 && (
+                      <span className="w-5 h-5 rounded-full bg-brand-500 text-white text-[11px] font-bold flex items-center justify-center">
+                        {patient.unreadCount}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </motion.button>
+          ))
+        ) : (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            className="text-center py-16"
+          >
+            <div className="w-14 h-14 bg-gray-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
+              <MessageSquare size={24} className="text-gray-400" />
+            </div>
+            <p className="font-semibold text-sm text-text-primary mb-1">
+              {patients.length === 0 ? "No patients yet" : "No results"}
+            </p>
+            <p className="text-xs text-text-secondary max-w-xs mx-auto mb-4">
+              {patients.length === 0
+                ? "Share your clinic QR code to get started"
+                : "Try a different search or filter"}
+            </p>
+            {patients.length === 0 && (
+              <button
+                onClick={() => router.push("/settings/share")}
+                className="inline-flex items-center gap-2 px-4 py-2.5 bg-brand-500 text-white font-semibold rounded-xl text-sm min-h-[44px]"
+              >
+                <QrCode size={16} />
+                Share Clinic QR
+              </button>
+            )}
+          </motion.div>
+        )}
+      </div>
+    </div>
   );
 }

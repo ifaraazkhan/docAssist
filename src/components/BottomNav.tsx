@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Inbox, Layers, Settings } from "lucide-react";
+import { tap } from "@/lib/haptics";
+import { cn } from "@/lib/cn";
 
 const navItems = [
   { href: "/dashboard", icon: Inbox, label: "Inbox" },
@@ -14,8 +16,8 @@ export default function BottomNav() {
   const pathname = usePathname();
 
   return (
-    <nav className="fixed bottom-0 left-0 right-0 z-50 bg-white/90 backdrop-blur-xl border-t border-slate-200/80 safe-bottom">
-      <div className="max-w-lg mx-auto flex items-center justify-around py-1">
+    <nav className="bottom-nav" aria-label="Main navigation">
+      <div className="max-w-lg mx-auto flex items-center justify-around">
         {navItems.map((item) => {
           const isActive =
             pathname === item.href || pathname?.startsWith(item.href + "/");
@@ -25,26 +27,25 @@ export default function BottomNav() {
             <Link
               key={item.href}
               href={item.href}
-              className={`flex flex-col items-center gap-0.5 px-6 py-2 rounded-xl transition-all duration-200 min-h-[44px] justify-center ${
-                isActive
-                  ? "text-brand-600"
-                  : "text-slate-500 hover:text-slate-700"
-              }`}
+              onClick={() => tap()}
+              aria-current={isActive ? "page" : undefined}
+              className={cn(
+                "relative flex flex-col items-center gap-0.5 px-6 py-2.5 min-h-[48px] min-w-[48px] justify-center transition-colors",
+                isActive ? "text-brand-600" : "text-gray-400"
+              )}
             >
-              <div className="relative">
-                <Icon
-                  size={22}
-                  strokeWidth={isActive ? 2.5 : 1.8}
-                  className="transition-all duration-200"
-                />
-                {isActive && (
-                  <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-1 h-1 bg-brand-500 rounded-full" />
-                )}
-              </div>
+              {isActive && (
+                <span className="absolute top-0 left-1/2 -translate-x-1/2 w-8 h-0.5 bg-brand-500 rounded-full" />
+              )}
+              <Icon
+                size={22}
+                strokeWidth={isActive ? 2.5 : 1.8}
+              />
               <span
-                className={`text-[10px] tracking-wide font-semibold ${
-                  isActive ? "text-brand-700" : "text-slate-500"
-                }`}
+                className={cn(
+                  "text-[11px] font-semibold",
+                  isActive ? "text-brand-700" : "text-gray-400"
+                )}
               >
                 {item.label}
               </span>

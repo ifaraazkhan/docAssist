@@ -22,33 +22,50 @@ const config: Config = {
           900: "#042f2e",
         },
         surface: {
-          warm: "#faf9f7",
+          DEFAULT: "#fafafa",
           card: "#ffffff",
-          muted: "#f1f0ee",
+          muted: "#f1f5f9",
         },
         urgent: {
           DEFAULT: "#ef4444",
-          bg: "#fef2f2",
-          text: "#991b1b",
+          50: "#fef2f2",
+          100: "#fee2e2",
         },
-        slate: {
-          850: "#172033",
-          950: "#0a0f1e",
+        amber: {
+          50: "#fffbeb",
+          DEFAULT: "#f59e0b",
         },
+        violet: {
+          50: "#f5f3ff",
+          DEFAULT: "#8b5cf6",
+        },
+        // Override text colors for better contrast
+        text: {
+          primary: "#0a0a0a",
+          secondary: "#6b7280",
+          tertiary: "#6b7280", // Darkened from #9ca3af for WCAG AA
+        },
+        border: "rgba(0,0,0,0.06)",
       },
       fontFamily: {
-        display: ['"DM Serif Display"', "Georgia", "serif"],
-        body: ['"DM Sans"', "system-ui", "sans-serif"],
+        sans: ['"Plus Jakarta Sans"', "system-ui", "sans-serif"],
       },
       boxShadow: {
-        soft: "0 1px 3px 0 rgba(0,0,0,0.04), 0 1px 2px -1px rgba(0,0,0,0.03)",
-        card: "0 2px 8px -2px rgba(0,0,0,0.08), 0 1px 4px -2px rgba(0,0,0,0.04)",
-        elevated: "0 8px 24px -4px rgba(0,0,0,0.12), 0 2px 8px -4px rgba(0,0,0,0.06)",
+        soft: "0 1px 3px rgba(0,0,0,0.04)",
+        card: "0 1px 3px rgba(0,0,0,0.08)",
+        elevated: "0 12px 32px -4px rgba(0,0,0,0.14), 0 4px 12px rgba(0,0,0,0.06)",
+        "bottom-nav": "0 -2px 12px rgba(0,0,0,0.03)",
+      },
+      borderRadius: {
+        "2xl": "16px",
+        "3xl": "20px",
+      },
+      spacing: {
+        "safe-bottom": "env(safe-area-inset-bottom)",
       },
       animation: {
-        "fade-in": "fadeIn 0.5s ease-out",
-        "slide-up": "slideUp 0.4s ease-out",
-        "slide-in-right": "slideInRight 0.3s ease-out",
+        "fade-in": "fadeIn 0.3s ease-out",
+        "slide-up": "slideUp 0.3s ease-out",
         "pulse-soft": "pulseSoft 2s ease-in-out infinite",
       },
       keyframes: {
@@ -57,12 +74,8 @@ const config: Config = {
           "100%": { opacity: "1" },
         },
         slideUp: {
-          "0%": { opacity: "0", transform: "translateY(16px)" },
+          "0%": { opacity: "0", transform: "translateY(12px)" },
           "100%": { opacity: "1", transform: "translateY(0)" },
-        },
-        slideInRight: {
-          "0%": { opacity: "0", transform: "translateX(16px)" },
-          "100%": { opacity: "1", transform: "translateX(0)" },
         },
         pulseSoft: {
           "0%, 100%": { opacity: "1" },
