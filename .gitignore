@@ -37,3 +37,13 @@ npm-debug.log*
 
 # Markdown docs
 *.md
+
+# Non-PWA folders (tracked separately)
+backend/
+landing-page/
+landingv2/
+plan/
+
+# Design prototypes
+pwa-design.html
+pwa-v2.html
