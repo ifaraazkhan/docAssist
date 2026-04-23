@@ -266,7 +266,7 @@ export default function DashboardPage() {
               transition={{ delay: i * 0.03 }}
               onClick={() => {
                 tap();
-                router.push(`/patients/${patient.mappingId}`);
+                router.push(`/patients/${patient.id}`);
               }}
               className="patient-row w-full text-left"
             >
