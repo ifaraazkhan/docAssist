@@ -433,12 +433,11 @@ async function handleDoctorOnboarding(
       await sendWhatsAppMessage(
         phone,
         `Your clinic is now live on DrCliniq.\n\n` +
-        `*Clinic code:* ${doctorCode}\n` +
-        `Share this with patients — they text it here to reach your clinic.\n\n` +
+        `*Clinic code:* ${doctorCode}\n\n` +
         `*Next steps:*\n` +
-        `1. Open your dashboard: ${link}\n` +
+        `1. Open your dashboard\n${link}\n` +
         `2. Set up auto-reply protocols\n` +
-        `3. Share your clinic code or QR with patients\n\n` +
+        `3. Share your clinic code with patients from the app\n\n` +
         `_Link expires in 60 minutes._`
       )
 
