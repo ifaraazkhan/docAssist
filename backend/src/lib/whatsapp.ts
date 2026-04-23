@@ -108,15 +108,14 @@ export async function sendWhatsAppMenu(to: string, body: string, items: { id: st
 }
 
 export async function sendWhatsAppSpecialtyList(to: string, body: string, specialties: string[]) {
-  // WhatsApp allows max 10 rows per section, up to 10 sections (100 items)
-  const sections = []
-  for (let i = 0; i < specialties.length; i += 10) {
-    const chunk = specialties.slice(i, i + 10)
-    sections.push({
-      title: sections.length === 0 ? 'Specialties' : 'More Specialties',
-      rows: chunk.map((s) => ({ id: `specialty_${s}`, title: s.substring(0, 24) })),
-    })
-  }
+  // WhatsApp allows max 10 rows TOTAL in a list message
+  // Show first 9 specialties + "Other" = 10 rows
+  const filtered = specialties.filter((s) => s !== 'Other')
+  const display = filtered.slice(0, 9)
+  const rows = display.map((s) => ({ id: `specialty_${s}`, title: s.substring(0, 24) }))
+  rows.push({ id: 'specialty_Other', title: 'Other' })
+
+  const sections = [{ title: 'Select your specialty', rows }]
 
   const res2 = await fetch(
     `https://graph.facebook.com/v19.0/${process.env.PHONE_NUMBER_ID}/messages`,

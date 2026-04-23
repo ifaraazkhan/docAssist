@@ -21,6 +21,9 @@ import specialtyRoutes from './routes/specialties'
 
 const app = express()
 
+// ── Trust proxy (Vercel/Railway reverse proxy) ──
+app.set('trust proxy', 1)
+
 // ── Security ──
 app.use(helmetMiddleware)
 app.use(corsMiddleware)
