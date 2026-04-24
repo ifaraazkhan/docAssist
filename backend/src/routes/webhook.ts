@@ -56,12 +56,17 @@ router.post('/', webhookVerify, async (req: Request, res: Response) => {
     // Normalize phone
     const from = normalizePhone(rawFrom)
 
-    // Extract text
+    // Extract text (ID for routing) and display text (title for chat display)
     let text = ''
+    let displayText = ''
     if (msgType === 'text') {
       text = msg.text?.body ?? ''
+      displayText = text
     } else if (msgType === 'interactive') {
-      text = msg.interactive?.list_reply?.id ?? msg.interactive?.button_reply?.id ?? ''
+      const listReply = msg.interactive?.list_reply
+      const buttonReply = msg.interactive?.button_reply
+      text = listReply?.id ?? buttonReply?.id ?? ''
+      displayText = listReply?.title ?? buttonReply?.title ?? text
     } else {
       // Unsupported type — acknowledge silently
       res.status(200).send('OK')
@@ -114,9 +119,10 @@ router.post('/', webhookVerify, async (req: Request, res: Response) => {
     }
 
     // ── BRANCH 3: Clinic code (patient joining a doctor) ──
-    // Matches both legacy CLINIC_XXXX and new DC-XXXX-NNNN format
-    if (upperText.startsWith('CLINIC_') || upperText.startsWith('DC-')) {
-      await handleClinicCode(from, upperText, contactName, wamid, waTimestamp, requestId)
+    // Extract DC-XXXX-NNNN or CLINIC_XXXX from anywhere in the message
+    const clinicCodeMatch = upperText.match(/\b(DC-[A-Z]+-\d{4})\b/) || upperText.match(/\b(CLINIC_\w+)\b/)
+    if (clinicCodeMatch) {
+      await handleClinicCode(from, clinicCodeMatch[1], contactName, wamid, waTimestamp, requestId)
       res.status(200).send('OK')
       return
     }
@@ -209,7 +215,7 @@ router.post('/', webhookVerify, async (req: Request, res: Response) => {
       await query(
         `INSERT INTO messages (wamid, patient_phone, doctor_id, direction, sender, content, msg_type, wa_timestamp)
          VALUES ($1, $2, $3, 'inbound', 'patient', $4, $5, $6)`,
-        [wamid, from, targetDoctorId, text, msgType === 'interactive' ? 'interactive' : 'text', waTimestamp]
+        [wamid, from, targetDoctorId, displayText, msgType === 'interactive' ? 'interactive' : 'text', waTimestamp]
       )
 
       // Protocol matching
@@ -568,7 +574,8 @@ async function handleClinicCode(
     [doctor.id]
   )
 
-  const welcomeText = `Welcome to *${doctor.clinic_name || formatDrName(doctor.name || '')}*.\nHow can we help you today?`
+  const termsUrl = `${process.env.APP_URL || 'https://drcliniq.in'}/terms`
+  const welcomeText = `Welcome to *${doctor.clinic_name || formatDrName(doctor.name || '')}*.\nHow can we help you today?\n\n_By continuing, you agree to our Terms & Privacy Policy: ${termsUrl}_`
 
   if (menuProtocols.rows.length > 0) {
     await sendWhatsAppMenu(
@@ -621,7 +628,7 @@ async function handleProtocolMatching(
 
   // Protocol matching: ID exact match first, then keyword match
   const allProtocols = await query(
-    `SELECT id, title, keywords, reply_text, disclaimer FROM protocols
+    `SELECT id, title, keywords, reply_text, disclaimer, protocol_type FROM protocols
      WHERE doctor_id = $1 AND is_active = true AND deleted_at IS NULL`,
     [doctorId]
   )
@@ -635,10 +642,53 @@ async function handleProtocolMatching(
   }
 
   if (matched) {
-    // Build reply with disclaimer
-    let reply = matched.reply_text
-    if (matched.disclaimer) {
-      reply += `\n\n⚠️ _${matched.disclaimer}_`
+    let reply: string
+
+    // System "Clinic Details" protocol — build dynamically from doctor profile
+    if (matched.protocol_type === 'system' && matched.title === 'Clinic Details') {
+      const docResult = await query(
+        `SELECT name, specialty, clinic_name, clinic_address, city,
+                clinic_phone, clinic_hours_start, clinic_hours_end,
+                clinic_days, doctor_code, phone
+         FROM doctors WHERE id = $1`,
+        [doctorId]
+      )
+      const doc = docResult.rows[0]
+
+      const parts: string[] = []
+      if (doc.clinic_name) parts.push(`*${doc.clinic_name}*`)
+      if (doc.name) parts.push(`${formatDrName(doc.name)}${doc.specialty ? ' — ' + doc.specialty : ''}`)
+      if (doc.clinic_address || doc.city) {
+        const addr = [doc.clinic_address, doc.city].filter(Boolean).join(', ')
+        parts.push(`📍 ${addr}`)
+      }
+      if (doc.clinic_hours_start && doc.clinic_hours_end) {
+        const dayNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+        const days = doc.clinic_days || '1111110'
+        const openDays = dayNames.filter((_, i) => days[i] === '1').join(', ')
+        const start = doc.clinic_hours_start.substring(0, 5)
+        const end = doc.clinic_hours_end.substring(0, 5)
+        parts.push(`⏰ ${openDays} · ${start}–${end}`)
+      }
+      if (doc.clinic_phone) parts.push(`📞 ${doc.clinic_phone}`)
+
+      // Add shareable link
+      const waPhone = process.env.WHATSAPP_BUSINESS_PHONE || doc.phone
+      if (doc.doctor_code) {
+        const clinicLabel = doc.clinic_name || formatDrName(doc.name || '')
+        const shareLink = `https://wa.me/${waPhone}?text=${encodeURIComponent('Hi! Clinic code: ' + doc.doctor_code)}`
+        parts.push('')
+        parts.push(`_Connect with ${clinicLabel} via WhatsApp_ 👇`)
+        parts.push(shareLink)
+      }
+
+      reply = parts.join('\n')
+    } else {
+      // Regular protocol reply
+      reply = matched.reply_text
+      if (matched.disclaimer) {
+        reply += `\n\n⚠️ _${matched.disclaimer}_`
+      }
     }
 
     await sendWhatsAppMessage(phone, reply)

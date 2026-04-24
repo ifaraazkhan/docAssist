@@ -580,7 +580,9 @@ export default function SettingsPage() {
               </p>
 
               <div className="space-y-4">
-                {(Object.entries(PLANS) as [PlanKey, typeof PLANS[PlanKey]][]).map(([key, plan]) => {
+                {(Object.entries(PLANS) as [PlanKey, typeof PLANS[PlanKey]][])
+                  .filter(([key]) => key !== 'free')
+                  .map(([key, plan]) => {
                   const isCurrent = key === currentPlan;
                   const isDowngrade =
                     (currentPlan === "pro" && key === "free") ||

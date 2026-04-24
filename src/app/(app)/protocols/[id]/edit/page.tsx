@@ -46,6 +46,9 @@ export default function EditProtocolPage() {
   }, [protocol]);
 
   const isSystem = protocol?.protocolType === "system";
+  const isLibrary = protocol?.protocolType === "library";
+  const titleLocked = isSystem || isLibrary; // title locked for system & library
+  const keywordsLocked = isSystem; // keywords editable for library & custom
 
   const handleAddKeyword = () => {
     const word = keywordInput.trim().toLowerCase();
@@ -67,7 +70,8 @@ export default function EditProtocolPage() {
     setSaving(true);
     try {
       await updateProtocol(protocolId, {
-        ...(isSystem ? {} : { title: title.trim(), keywords }),
+        ...(titleLocked ? {} : { title: title.trim() }),
+        ...(keywordsLocked ? {} : { keywords }),
         replyText: replyText.trim(),
         disclaimer: disclaimer.trim() || undefined,
         addToMenu,
@@ -131,10 +135,10 @@ export default function EditProtocolPage() {
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               className="input-field"
-              disabled={isSystem}
+              disabled={titleLocked}
             />
-            {isSystem && (
-              <p className="text-[11px] text-amber-600 mt-1">System protocol — title cannot be changed</p>
+            {titleLocked && (
+              <p className="text-[11px] text-amber-600 mt-1">{isSystem ? 'System' : 'Library'} protocol — title cannot be changed</p>
             )}
           </motion.div>
 
@@ -143,7 +147,7 @@ export default function EditProtocolPage() {
             <label className="text-sm font-medium text-text-primary mb-1.5 block">
               Trigger Keywords
             </label>
-            {!isSystem && (
+            {!keywordsLocked && (
               <div className="flex gap-2 mb-2">
                 <input
                   type="text"
@@ -168,7 +172,7 @@ export default function EditProtocolPage() {
                     className="inline-flex items-center gap-1 px-2.5 py-1 bg-brand-50 text-brand-700 rounded-lg text-xs font-medium"
                   >
                     {kw}
-                    {!isSystem && (
+                    {!keywordsLocked && (
                       <button
                         type="button"
                         onClick={() => handleRemoveKeyword(kw)}
@@ -182,7 +186,7 @@ export default function EditProtocolPage() {
                 ))}
               </div>
             )}
-            {isSystem && (
+            {keywordsLocked && (
               <p className="text-[11px] text-amber-600 mt-1">System protocol — keywords cannot be changed</p>
             )}
           </motion.div>

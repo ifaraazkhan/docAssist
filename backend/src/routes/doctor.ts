@@ -184,7 +184,7 @@ router.get('/share-info', requireAuth, async (req: Request, res: Response, next:
     const { id } = (req as AuthenticatedRequest).doctor
 
     const result = await query(
-      'SELECT doctor_code, short_link_slug, phone FROM doctors WHERE id = $1',
+      'SELECT doctor_code, short_link_slug, phone, name, clinic_name FROM doctors WHERE id = $1',
       [id]
     )
 
@@ -193,10 +193,14 @@ router.get('/share-info', requireAuth, async (req: Request, res: Response, next:
     const doc = result.rows[0]
     const baseUrl = process.env.APP_URL || 'http://localhost:3000'
     const shortLink = doc.short_link_slug ? `${baseUrl}/dr/${doc.short_link_slug}` : null
-    // QR data = wa.me link with DrCliniq business number + doctor code pre-filled
+    // QR data = wa.me link with DrCliniq business number + friendly pre-filled message
     const waPhone = process.env.WHATSAPP_BUSINESS_PHONE || doc.phone
-    const qrData = doc.doctor_code
-      ? `https://wa.me/${waPhone}?text=${encodeURIComponent(doc.doctor_code)}`
+    const clinicLabel = doc.clinic_name || (doc.name ? `Dr. ${doc.name}` : 'DrCliniq')
+    const prefilledMsg = doc.doctor_code
+      ? `Hi! Clinic code: ${doc.doctor_code}`
+      : null
+    const qrData = prefilledMsg
+      ? `https://wa.me/${waPhone}?text=${encodeURIComponent(prefilledMsg)}`
       : null
 
     res.json({
