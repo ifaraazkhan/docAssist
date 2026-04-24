@@ -675,8 +675,7 @@ async function handleProtocolMatching(
     if (matched.protocol_type === 'system' && matched.title === 'Clinic Details') {
       const docResult = await query(
         `SELECT name, specialty, clinic_name, clinic_address, city,
-                clinic_phone, clinic_hours_start, clinic_hours_end,
-                clinic_days, doctor_code, phone
+                clinic_phone, doctor_code, phone
          FROM doctors WHERE id = $1`,
         [doctorId]
       )
@@ -689,14 +688,33 @@ async function handleProtocolMatching(
         const addr = [doc.clinic_address, doc.city].filter(Boolean).join(', ')
         parts.push(`📍 ${addr}`)
       }
-      if (doc.clinic_hours_start && doc.clinic_hours_end) {
+
+      // Derive timing from OPD sessions
+      const sessResult = await query(
+        `SELECT name, start_time, end_time, days FROM opd_sessions
+         WHERE doctor_id = $1 AND is_active = true ORDER BY start_time ASC`,
+        [doctorId]
+      )
+      if (sessResult.rows.length > 0) {
         const dayNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
-        const days = doc.clinic_days || '1111110'
-        const openDays = dayNames.filter((_, i) => days[i] === '1').join(', ')
-        const start = doc.clinic_hours_start.substring(0, 5)
-        const end = doc.clinic_hours_end.substring(0, 5)
-        parts.push(`⏰ ${openDays} · ${start}–${end}`)
+        // Union of all active days across sessions
+        const unionDays = '0000000'.split('')
+        for (const s of sessResult.rows) {
+          const d = s.days || '1111110'
+          for (let i = 0; i < 7; i++) {
+            if (d[i] === '1') unionDays[i] = '1'
+          }
+        }
+        const openDays = dayNames.filter((_, i) => unionDays[i] === '1').join(', ')
+        // Show each OPD session
+        for (const s of sessResult.rows) {
+          const start = s.start_time.substring(0, 5)
+          const end = s.end_time.substring(0, 5)
+          parts.push(`⏰ ${s.name}: ${start}–${end}`)
+        }
+        parts.push(`📅 ${openDays}`)
       }
+
       if (doc.clinic_phone) parts.push(`📞 ${doc.clinic_phone}`)
 
       // Add shareable link

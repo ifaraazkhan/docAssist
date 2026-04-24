@@ -12,7 +12,6 @@ import {
   Phone,
   MapPin,
   Clock,
-  Calendar,
   MessageCircle,
   QrCode,
   Share2,
@@ -84,9 +83,6 @@ export default function SettingsPage() {
   const [city, setCity] = useState(doctor.city ?? "");
   const [clinicAddress, setClinicAddress] = useState(doctor.clinicAddress ?? "");
   const [clinicPhone, setClinicPhone] = useState(doctor.clinicPhone ?? "");
-  const [clinicHoursStart, setClinicHoursStart] = useState(doctor.clinicHoursStart ?? "09:00");
-  const [clinicHoursEnd, setClinicHoursEnd] = useState(doctor.clinicHoursEnd ?? "18:00");
-  const [clinicDays, setClinicDays] = useState(doctor.clinicDays ?? "1111110");
   const [clinicClosed, setClinicClosed] = useState(doctor.clinicClosed ?? false);
   const [clinicClosedMessage, setClinicClosedMessage] = useState(
     doctor.clinicClosedMessage ?? "Our clinic is temporarily closed. We will resume soon."
@@ -194,9 +190,6 @@ export default function SettingsPage() {
         city: city.trim() || null,
         clinicAddress: clinicAddress.trim() || null,
         clinicPhone: clinicPhone.trim() || null,
-        clinicHoursStart,
-        clinicHoursEnd,
-        clinicDays,
         clinicClosed,
         clinicClosedMessage: clinicClosed ? clinicClosedMessage.trim() : null,
       } as Parameters<typeof updateDoctorProfile>[0]);
@@ -359,62 +352,6 @@ export default function SettingsPage() {
             <input value={clinicAddress} onChange={(e) => setClinicAddress(e.target.value)} className="input-field" />
           </div>
 
-          {/* Clinic hours */}
-          <div>
-            <label className="text-xs font-medium text-text-secondary mb-2 flex items-center gap-1.5">
-              <Clock size={12} /> Clinic Hours
-            </label>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <span className="text-[11px] text-text-secondary">Opens</span>
-                <input
-                  type="time"
-                  value={clinicHoursStart}
-                  onChange={(e) => setClinicHoursStart(e.target.value)}
-                  className="input-field mt-1"
-                />
-              </div>
-              <div>
-                <span className="text-[11px] text-text-secondary">Closes</span>
-                <input
-                  type="time"
-                  value={clinicHoursEnd}
-                  onChange={(e) => setClinicHoursEnd(e.target.value)}
-                  className="input-field mt-1"
-                />
-              </div>
-            </div>
-          </div>
-
-          {/* Clinic days */}
-          <div>
-            <label className="text-xs font-medium text-text-secondary mb-2 flex items-center gap-1.5">
-              <Calendar size={12} /> Open Days
-            </label>
-            <div className="flex gap-1.5">
-              {DAYS.map((d, i) => (
-                <button
-                  key={d}
-                  type="button"
-                  onClick={() => {
-                    tap();
-                    const arr = clinicDays.split("");
-                    arr[i] = arr[i] === "1" ? "0" : "1";
-                    setClinicDays(arr.join(""));
-                  }}
-                  className={cn(
-                    "flex-1 py-2 rounded-lg text-xs font-medium min-h-[36px] border transition-colors",
-                    clinicDays[i] === "1"
-                      ? "bg-brand-500 text-white border-brand-500"
-                      : "bg-gray-50 text-text-secondary border-gray-200"
-                  )}
-                >
-                  {d}
-                </button>
-              ))}
-            </div>
-          </div>
-
           {/* Temporarily closed */}
           <div className={cn(
             "rounded-xl p-4 border transition-colors",
@@ -488,24 +425,6 @@ export default function SettingsPage() {
             }
           />
           <InfoRow icon={<Phone size={15} />} label="Phone" value={doctor.clinicPhone ?? doctor.phone} />
-          <InfoRow
-            icon={<Clock size={15} />}
-            label="Hours"
-            value={
-              doctor.clinicHoursStart && doctor.clinicHoursEnd
-                ? `${doctor.clinicHoursStart} – ${doctor.clinicHoursEnd}`
-                : "Not set"
-            }
-          />
-          <InfoRow
-            icon={<Calendar size={15} />}
-            label="Days"
-            value={
-              doctor.clinicDays
-                ? DAYS.filter((_, i) => doctor.clinicDays?.[i] === "1").join(", ") || "None"
-                : "Not set"
-            }
-          />
           {doctor.clinicClosed && (
             <div className="px-4 py-3 flex items-center gap-3">
               <AlertTriangle size={15} className="text-red-500 flex-shrink-0" />
