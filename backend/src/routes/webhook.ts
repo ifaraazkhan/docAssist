@@ -882,8 +882,9 @@ async function handleAppointmentBooking(
       label = d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })
     }
     // Free plan cap info
+    const remaining = 10 - booked
     const slotsInfo = plan === 'free'
-      ? ` · ${Math.max(0, 10 - booked)} left`
+      ? remaining <= 0 ? ' · Full' : ` · ${remaining} left`
       : booked > 0 ? ` · ${booked} booked` : ''
 
     return {
@@ -1084,11 +1085,30 @@ async function handleAppointmentSessionSelect(
        WHERE doctor_id = $1 AND appointment_date = $2 AND status = 'booked'`,
       [doctorId, bookingDate]
     )
-    if (parseInt(dailyCount.rows[0].cnt, 10) >= 10) {
+    const currentCount = parseInt(dailyCount.rows[0].cnt, 10)
+    if (currentCount >= 10) {
       await sendWhatsAppMessage(
         phone,
         'Sorry, all appointment slots are full for this day. Please contact the clinic directly or try another day.'
       )
+
+      // Alert doctor about missed booking (save as system message)
+      const patientResult2 = await query('SELECT name FROM patients WHERE phone = $1', [phone])
+      const pName = patientResult2.rows[0]?.name || phone
+      await query(
+        `INSERT INTO messages (patient_phone, doctor_id, direction, sender, content, msg_type)
+         VALUES ($1, $2, 'inbound', 'system', $3, 'text')`,
+        [phone, doctorId, `⚠️ ${pName} tried to book an appointment but your free plan limit (10/day) was reached. Upgrade to accept unlimited bookings.`]
+      )
+
+      // Mark patient as urgent so doctor sees the alert in inbox
+      await query(
+        `UPDATE patient_doctor_mappings SET is_urgent = true, unread_count = unread_count + 1
+         WHERE patient_phone = $1 AND doctor_id = $2`,
+        [phone, doctorId]
+      )
+
+      console.log(`[webhook][${requestId}] free plan appointment limit reached, patient ${phone} turned away`)
       return
     }
   }

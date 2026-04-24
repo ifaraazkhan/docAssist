@@ -14,9 +14,11 @@ import {
   Clock,
   ChevronLeft,
   ChevronRight,
+  Zap,
 } from "lucide-react";
 import { getAppointments, updateAppointment } from "@/lib/api";
 import type { Appointment } from "@/lib/api";
+import { useDoctor } from "@/lib/doctor-context";
 import { cn } from "@/lib/cn";
 import { tap, success as hapticSuccess } from "@/lib/haptics";
 import { toast } from "sonner";
@@ -53,6 +55,8 @@ function formatDisplayDate(d: Date) {
 export default function AppointmentsPage() {
   const [selectedDate, setSelectedDate] = useState(new Date());
   const dateStr = formatDate(selectedDate);
+  const doctor = useDoctor();
+  const isFree = doctor.plan === "free";
 
   const { data, isLoading, mutate } = useSWR(
     ["appointments", dateStr],
@@ -117,7 +121,12 @@ export default function AppointmentsPage() {
       {/* Header */}
       <div className="flex items-center justify-between mb-5">
         <h1 className="text-xl font-bold text-text-primary">Appointments</h1>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2">
+          {isFree && (
+            <span className="text-[10px] font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-2 py-0.5">
+              {bookedCount}/10 free
+            </span>
+          )}
           <span className="text-xs font-medium text-brand-600 bg-brand-50 rounded-lg px-2.5 py-1">
             {bookedCount} pending · {completedCount} done
           </span>
@@ -137,6 +146,46 @@ export default function AppointmentsPage() {
           <ChevronRight size={18} className="text-text-secondary" />
         </button>
       </div>
+
+      {/* Free plan limit warning */}
+      {isFree && bookedCount >= 8 && (
+        <motion.div
+          initial={{ opacity: 0, y: 4 }}
+          animate={{ opacity: 1, y: 0 }}
+          className={cn(
+            "mb-4 p-3 rounded-xl border",
+            bookedCount >= 10
+              ? "bg-red-50 border-red-200"
+              : "bg-amber-50 border-amber-200"
+          )}
+        >
+          <p className={cn(
+            "text-xs font-semibold mb-0.5",
+            bookedCount >= 10 ? "text-red-800" : "text-amber-800"
+          )}>
+            {bookedCount >= 10
+              ? "🚫 Appointment limit reached — patients are being turned away"
+              : `⚠️ ${10 - bookedCount} slots left today — patients may miss out`}
+          </p>
+          <p className={cn(
+            "text-[11px] mb-2",
+            bookedCount >= 10 ? "text-red-700" : "text-amber-700"
+          )}>
+            {bookedCount >= 10
+              ? "New patients trying to book are seeing \"slots full\". Upgrade to accept unlimited appointments."
+              : "You're almost at the free plan limit. Upgrade so no patient gets turned away."}
+          </p>
+          <a
+            href="/settings"
+            className={cn(
+              "inline-flex items-center gap-1 text-xs font-semibold px-3 py-1.5 rounded-md text-white",
+              bookedCount >= 10 ? "bg-red-600" : "bg-amber-600"
+            )}
+          >
+            <Zap size={12} /> Upgrade for Unlimited
+          </a>
+        </motion.div>
+      )}
 
       <AnimatePresence mode="wait">
         {isLoading ? (

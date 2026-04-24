@@ -105,6 +105,7 @@ export default function SettingsPage() {
   const [newSessionAvg, setNewSessionAvg] = useState(5);
   const [savingSession, setSavingSession] = useState(false);
   const [deletingSession, setDeletingSession] = useState<string | null>(null);
+  const [showSessionUpgrade, setShowSessionUpgrade] = useState(false);
 
   // Load Razorpay script
   useEffect(() => {
@@ -480,9 +481,16 @@ export default function SettingsPage() {
           </div>
           {!showAddSession && (
             <button
-              onClick={() => { tap(); setShowAddSession(true); }}
-              disabled={currentPlan === "free" && opdSessions.length >= 2}
-              className="flex items-center gap-1 text-xs font-medium text-brand-600 disabled:opacity-40"
+              onClick={() => {
+                tap();
+                if (currentPlan === "free" && opdSessions.length >= 2) {
+                  setShowSessionUpgrade(true);
+                } else {
+                  setShowSessionUpgrade(false);
+                  setShowAddSession(true);
+                }
+              }}
+              className="flex items-center gap-1 text-xs font-medium text-brand-600"
             >
               <Plus size={14} /> Add
             </button>
@@ -492,6 +500,27 @@ export default function SettingsPage() {
           Required to activate the &quot;Book Appointment&quot; protocol
           {currentPlan === "free" && ` · ${opdSessions.length}/2 sessions (Free plan)`}
         </p>
+
+        {showSessionUpgrade && currentPlan === "free" && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: "auto" }}
+            className="mx-4 mb-3 p-3 rounded-lg bg-amber-50 border border-amber-200"
+          >
+            <p className="text-xs font-semibold text-amber-800 mb-1">
+              ⚡ You&apos;re at full capacity
+            </p>
+            <p className="text-[11px] text-amber-700 mb-2">
+              Patients looking for evening or weekend slots won&apos;t be able to book. Upgrade to add unlimited sessions and never miss a booking.
+            </p>
+            <button
+              onClick={() => { setShowSessionUpgrade(false); setShowPlanDrawer(true); }}
+              className="w-full py-1.5 rounded-md bg-amber-600 text-white text-xs font-semibold flex items-center justify-center gap-1"
+            >
+              <Zap size={12} /> Unlock Unlimited Sessions
+            </button>
+          </motion.div>
+        )}
 
         {opdLoading ? (
           <div className="px-4 pb-4">
