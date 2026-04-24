@@ -10,7 +10,7 @@ import { generateDoctorCode, generateSlug } from '../lib/clinic-code'
 const router = Router()
 
 const GREETINGS = ['hi', 'hello', 'hey', 'helo', 'menu', 'help', 'start', 'namaste', 'namaskar']
-const CANCEL_KEYWORDS = ['cancel appointment', 'cancel token', 'cancel booking', 'cancel opd']
+const CANCEL_KEYWORDS = ['cancel appointment', 'cancel token', 'cancel booking', 'cancel opd', 'cancel']
 const DOCTOR_SIGNUP_CODE = 'DOCTOR_SIGNUP'
 
 // ──────────────────────────────────────────────
@@ -777,7 +777,7 @@ async function handleAppointmentBooking(
 
   // Get active sessions for today
   const sessionsResult = await query(
-    `SELECT id, name, start_time, end_time, avg_minutes
+    `SELECT id, name, start_time, end_time, days, avg_minutes
      FROM opd_sessions
      WHERE doctor_id = $1 AND is_active = true
      ORDER BY start_time ASC`,
@@ -849,18 +849,20 @@ async function handleAppointmentSessionSelect(
   const session = sessionResult.rows[0]
   const today = new Date().toISOString().split('T')[0]
 
-  // Check if patient already has a booking for this session today
+  // Check if patient already has any booking for today (any session)
   const existingBooking = await query(
-    `SELECT id, token_number FROM appointments
-     WHERE patient_phone = $1 AND session_id = $2 AND appointment_date = $3 AND status = 'booked'`,
-    [phone, sessionId, today]
+    `SELECT a.id, a.token_number, s.name AS session_name FROM appointments a
+     JOIN opd_sessions s ON s.id = a.session_id
+     WHERE a.patient_phone = $1 AND a.doctor_id = $2 AND a.appointment_date = $3 AND a.status = 'booked'`,
+    [phone, doctorId, today]
   )
 
   if (existingBooking.rows.length > 0) {
     const t = existingBooking.rows[0].token_number
+    const sn = existingBooking.rows[0].session_name
     await sendWhatsAppMessage(
       phone,
-      `You already have *Token #${t}* for ${session.name} today. No need to book again.\n\nTo cancel, reply "cancel appointment".`
+      `You already have *Token #${t}* for ${sn} today. No need to book again.\n\nTo cancel, reply "cancel".`
     )
     return
   }
@@ -884,24 +886,21 @@ async function handleAppointmentSessionSelect(
     }
   }
 
-  // Get next token number for this session today
-  const maxToken = await query(
-    `SELECT COALESCE(MAX(token_number), 0) as max_token FROM appointments
-     WHERE session_id = $1 AND appointment_date = $2 AND status != 'cancelled'`,
-    [sessionId, today]
-  )
-  const tokenNumber = parseInt(maxToken.rows[0].max_token, 10) + 1
-
   // Get patient name
   const patientResult = await query('SELECT name FROM patients WHERE phone = $1', [phone])
   const patientName = patientResult.rows[0]?.name || null
 
-  // Book the appointment
-  await query(
+  // Atomic token assignment — INSERT with subquery to avoid race condition
+  const insertResult = await query(
     `INSERT INTO appointments (doctor_id, session_id, patient_phone, patient_name, token_number, appointment_date)
-     VALUES ($1, $2, $3, $4, $5, $6)`,
-    [doctorId, sessionId, phone, patientName, tokenNumber, today]
+     VALUES ($1, $2, $3, $4,
+       (SELECT COALESCE(MAX(token_number), 0) + 1 FROM appointments
+        WHERE session_id = $2 AND appointment_date = $5 AND status != 'cancelled'),
+       $5)
+     RETURNING token_number`,
+    [doctorId, sessionId, phone, patientName, today]
   )
+  const tokenNumber = insertResult.rows[0].token_number
 
   // Calculate estimated wait
   const waitMinutes = (tokenNumber - 1) * (session.avg_minutes || 5)
@@ -921,7 +920,7 @@ async function handleAppointmentSessionSelect(
     `📅 ${dateStr}\n` +
     `🔢 Token: *#${tokenNumber}*\n` +
     `${waitText}\n\n` +
-    `To cancel, reply "cancel appointment"`
+    `To cancel, reply "cancel"`
 
   await sendWhatsAppMessage(phone, reply)
 

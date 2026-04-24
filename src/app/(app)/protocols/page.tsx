@@ -93,8 +93,11 @@ export default function ProtocolsPage() {
     );
     try {
       await updateProtocol(id, { isActive: !isActive });
-    } catch {
+    } catch (err) {
       mutateMyProtocols();
+      if (err instanceof Error) {
+        toast.error(err.message);
+      }
     }
   };
 
