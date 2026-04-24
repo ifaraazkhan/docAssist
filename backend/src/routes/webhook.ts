@@ -879,7 +879,7 @@ async function handleAppointmentBooking(
     } else if (ds === tomorrowStr) {
       label = 'Tomorrow'
     } else {
-      label = d.toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' })
+      label = d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })
     }
     // Free plan cap info
     const slotsInfo = plan === 'free'
@@ -895,12 +895,7 @@ async function handleAppointmentBooking(
     }
   })
 
-  // Show OPD timings in body
-  const sessionLines = sessionsResult.rows.map((s) =>
-    `  • ${s.name}: ${formatTime(s.start_time)}–${formatTime(s.end_time)}`
-  ).join('\n')
-
-  const bodyText = `📅 *Book Appointment*\n${clinicLabel}\n\n${sessionLines}\n\nSelect a day:`
+  const bodyText = `📅 *Book Appointment*\n${clinicLabel}\n\nSelect a day:`
 
   if (dayItems.length <= 3) {
     await sendWhatsAppButtons(phone, bodyText, dayItems.map((d) => ({ id: d.id, title: d.btnTitle })))
@@ -974,6 +969,12 @@ async function handleAppointmentDaySelect(
     return
   }
 
+  // Smart skip: if only 1 session, book directly
+  if (daySessions.length === 1) {
+    await handleAppointmentSessionSelect(phone, doctorId, daySessions[0].id, dateStr, requestId)
+    return
+  }
+
   // Get booked counts per session for this date
   const countResult = await query(
     `SELECT session_id, COUNT(*) AS cnt FROM appointments
@@ -1018,7 +1019,7 @@ async function handleAppointmentDaySelect(
   console.log(`[webhook][${requestId}] appointment sessions shown for ${dateStr}: ${daySessions.length}`)
 }
 
-/** Human label for a date: Today / Tomorrow / Wed, 28 Apr */
+/** Human label for a date: Today / Tomorrow / 28 Apr */
 function formatDayLabel(dateStr: string): string {
   const today = new Date()
   const todayStr = today.toISOString().split('T')[0]
@@ -1029,7 +1030,7 @@ function formatDayLabel(dateStr: string): string {
   if (dateStr === todayStr) return 'Today'
   if (dateStr === tomorrowStr) return 'Tomorrow'
   const d = new Date(dateStr + 'T00:00:00')
-  return d.toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' })
+  return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })
 }
 
 // ──────────────────────────────────────────────
