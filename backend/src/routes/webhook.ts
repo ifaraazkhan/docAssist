@@ -612,10 +612,24 @@ async function handleProtocolMatching(
   const lowerText = text.toLowerCase().trim()
   const isGreeting = GREETINGS.includes(lowerText)
 
+  // ── Appointment day selection (interactive reply) ──
+  if (text.startsWith('appt_day_')) {
+    const dateStr = text.replace('appt_day_', '')
+    await handleAppointmentDaySelect(phone, doctorId, dateStr, requestId)
+    return
+  }
+
   // ── Appointment session selection (interactive reply) ──
   if (text.startsWith('appt_session_')) {
-    const sessionId = text.replace('appt_session_', '')
-    await handleAppointmentSessionSelect(phone, doctorId, sessionId, requestId)
+    const payload = text.replace('appt_session_', '')
+    // Format: sessionId_YYYY-MM-DD
+    const lastUnderscore = payload.lastIndexOf('_')
+    const datePart = payload.substring(lastUnderscore - 4) // grab _YYYY-MM-DD (11 chars from end)
+    // Actually split by known date format at end
+    const dateMatch = payload.match(/_(\d{4}-\d{2}-\d{2})$/)
+    const sessionId = dateMatch ? payload.replace(`_${dateMatch[1]}`, '') : payload
+    const bookingDate = dateMatch ? dateMatch[1] : new Date().toISOString().split('T')[0]
+    await handleAppointmentSessionSelect(phone, doctorId, sessionId, bookingDate, requestId)
     return
   }
 
@@ -708,9 +722,7 @@ async function handleProtocolMatching(
         const openDays = dayNames.filter((_, i) => unionDays[i] === '1').join(', ')
         // Show each OPD session
         for (const s of sessResult.rows) {
-          const start = s.start_time.substring(0, 5)
-          const end = s.end_time.substring(0, 5)
-          parts.push(`⏰ ${s.name}: ${start}–${end}`)
+          parts.push(`⏰ ${s.name}: ${formatTime(s.start_time)}–${formatTime(s.end_time)}`)
         }
         parts.push(`📅 ${openDays}`)
       }
@@ -764,7 +776,41 @@ async function handleProtocolMatching(
 }
 
 // ──────────────────────────────────────────────
-// HANDLER: Appointment booking — show sessions
+// HELPER: 24h time → human readable AM/PM
+// ──────────────────────────────────────────────
+function formatTime(time: string): string {
+  const [h, m] = time.substring(0, 5).split(':').map(Number)
+  const suffix = h >= 12 ? 'PM' : 'AM'
+  const hour12 = h === 0 ? 12 : h > 12 ? h - 12 : h
+  return m === 0 ? `${hour12} ${suffix}` : `${hour12}:${m.toString().padStart(2, '0')} ${suffix}`
+}
+
+// ──────────────────────────────────────────────
+// HELPER: Get next N available dates for OPD
+// ──────────────────────────────────────────────
+function getAvailableDates(
+  sessions: { days: string }[],
+  count: number
+): Date[] {
+  const dates: Date[] = []
+  const d = new Date()
+  // Check up to 14 days ahead
+  for (let i = 0; i < 14 && dates.length < count; i++) {
+    const check = new Date(d)
+    check.setDate(d.getDate() + i)
+    const dayIndex = (check.getDay() + 6) % 7 // 0=Mon
+    // Check if any session runs on this day
+    const hasSession = sessions.some((s) => {
+      const days = s.days || '1111110'
+      return days[dayIndex] === '1'
+    })
+    if (hasSession) dates.push(check)
+  }
+  return dates
+}
+
+// ──────────────────────────────────────────────
+// HANDLER: Appointment booking — Step 1: show available days
 // ──────────────────────────────────────────────
 async function handleAppointmentBooking(
   phone: string,
@@ -772,10 +818,7 @@ async function handleAppointmentBooking(
   protocolId: string,
   requestId: string
 ) {
-  const today = new Date()
-  const dayIndex = (today.getDay() + 6) % 7 // JS: 0=Sun → we need 0=Mon
-
-  // Get active sessions for today
+  // Get active sessions
   const sessionsResult = await query(
     `SELECT id, name, start_time, end_time, days, avg_minutes
      FROM opd_sessions
@@ -784,36 +827,85 @@ async function handleAppointmentBooking(
     [doctorId]
   )
 
-  // Filter sessions that run today
-  const todaySessions = sessionsResult.rows.filter((s) => {
-    const days = s.days || '1111110'
-    return days[dayIndex] === '1'
-  })
+  if (sessionsResult.rows.length === 0) {
+    await sendWhatsAppMessage(phone, 'Sorry, appointment booking is not available at this time.')
+    return
+  }
 
-  if (todaySessions.length === 0) {
-    await sendWhatsAppMessage(phone, 'Sorry, no OPD sessions are available today. Please try again on a working day.')
+  // Get next 3 available dates
+  const availDates = getAvailableDates(sessionsResult.rows, 3)
+
+  if (availDates.length === 0) {
+    await sendWhatsAppMessage(phone, 'Sorry, no OPD sessions are available in the coming days.')
     return
   }
 
   // Increment protocol usage
   await query('UPDATE protocols SET usage_count = usage_count + 1 WHERE id = $1', [protocolId])
 
-  // Show sessions as buttons (≤3) or list (>3)
-  const docResult = await query('SELECT name, clinic_name FROM doctors WHERE id = $1', [doctorId])
+  // Get doctor info
+  const docResult = await query('SELECT name, clinic_name, plan FROM doctors WHERE id = $1', [doctorId])
   const doc = docResult.rows[0]
   const clinicLabel = doc?.clinic_name || formatDrName(doc?.name || '')
+  const plan = doc?.plan || 'free'
 
-  const sessionItems = todaySessions.map((s) => ({
-    id: `appt_session_${s.id}`,
-    title: `${s.name} (${s.start_time.substring(0, 5)}–${s.end_time.substring(0, 5)})`.substring(0, 24),
-  }))
+  // Count booked tokens per date
+  const dateStrs = availDates.map((d) => d.toISOString().split('T')[0])
+  const countResult = await query(
+    `SELECT appointment_date::text AS dt, COUNT(*) AS cnt
+     FROM appointments
+     WHERE doctor_id = $1 AND appointment_date = ANY($2) AND status = 'booked'
+     GROUP BY appointment_date`,
+    [doctorId, dateStrs]
+  )
+  const bookedMap: Record<string, number> = {}
+  for (const r of countResult.rows) {
+    bookedMap[r.dt] = parseInt(r.cnt, 10)
+  }
 
-  const bodyText = `📅 *Book Appointment*\n${clinicLabel}\n\nSelect an OPD session:`
+  // Build day items
+  const today = new Date()
+  const todayStr = today.toISOString().split('T')[0]
+  const tomorrow = new Date(today)
+  tomorrow.setDate(today.getDate() + 1)
+  const tomorrowStr = tomorrow.toISOString().split('T')[0]
 
-  if (sessionItems.length <= 3) {
-    await sendWhatsAppButtons(phone, bodyText, sessionItems)
+  const dayItems = availDates.map((d) => {
+    const ds = d.toISOString().split('T')[0]
+    const booked = bookedMap[ds] || 0
+    let label: string
+    if (ds === todayStr) {
+      label = 'Today'
+    } else if (ds === tomorrowStr) {
+      label = 'Tomorrow'
+    } else {
+      label = d.toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' })
+    }
+    // Free plan cap info
+    const slotsInfo = plan === 'free'
+      ? ` · ${Math.max(0, 10 - booked)} left`
+      : booked > 0 ? ` · ${booked} booked` : ''
+
+    return {
+      id: `appt_day_${ds}`,
+      // Buttons: max 20 chars
+      btnTitle: `${label}${slotsInfo}`.substring(0, 20),
+      // List: max 24 chars
+      listTitle: `${label}${slotsInfo}`.substring(0, 24),
+    }
+  })
+
+  // Show OPD timings in body
+  const sessionLines = sessionsResult.rows.map((s) =>
+    `  • ${s.name}: ${formatTime(s.start_time)}–${formatTime(s.end_time)}`
+  ).join('\n')
+
+  const bodyText = `📅 *Book Appointment*\n${clinicLabel}\n\n${sessionLines}\n\nSelect a day:`
+
+  if (dayItems.length <= 3) {
+    await sendWhatsAppButtons(phone, bodyText, dayItems.map((d) => ({ id: d.id, title: d.btnTitle })))
   } else {
-    await sendWhatsAppMenu(phone, bodyText, sessionItems)
+    await sendWhatsAppMenu(phone, bodyText, dayItems.map((d) => ({ id: d.id, title: d.listTitle })))
   }
 
   // Save bot response
@@ -823,16 +915,131 @@ async function handleAppointmentBooking(
     [phone, doctorId, bodyText, protocolId]
   )
 
-  console.log(`[webhook][${requestId}] appointment sessions shown: ${todaySessions.length}`)
+  console.log(`[webhook][${requestId}] appointment days shown: ${dayItems.length}`)
 }
 
 // ──────────────────────────────────────────────
-// HANDLER: Appointment — patient selects session
+// HANDLER: Appointment — Step 2: patient picks day, show sessions
+// ──────────────────────────────────────────────
+async function handleAppointmentDaySelect(
+  phone: string,
+  doctorId: string,
+  dateStr: string,
+  requestId: string
+) {
+  // Validate date format
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+    await sendWhatsAppMessage(phone, 'Invalid date. Please try booking again.')
+    return
+  }
+
+  const bookingDate = new Date(dateStr + 'T00:00:00')
+  const dayIndex = (bookingDate.getDay() + 6) % 7 // 0=Mon
+
+  // Check if patient already has a booking for this date
+  const existingBooking = await query(
+    `SELECT a.id, a.token_number, s.name AS session_name FROM appointments a
+     JOIN opd_sessions s ON s.id = a.session_id
+     WHERE a.patient_phone = $1 AND a.doctor_id = $2 AND a.appointment_date = $3 AND a.status = 'booked'`,
+    [phone, doctorId, dateStr]
+  )
+
+  if (existingBooking.rows.length > 0) {
+    const t = existingBooking.rows[0].token_number
+    const sn = existingBooking.rows[0].session_name
+    const dayLabel = formatDayLabel(dateStr)
+    await sendWhatsAppMessage(
+      phone,
+      `You already have *Token #${t}* for ${sn} on ${dayLabel}.\n\nTo cancel, reply "cancel".`
+    )
+    return
+  }
+
+  // Get sessions active on this day
+  const sessionsResult = await query(
+    `SELECT id, name, start_time, end_time, days, avg_minutes
+     FROM opd_sessions
+     WHERE doctor_id = $1 AND is_active = true
+     ORDER BY start_time ASC`,
+    [doctorId]
+  )
+
+  const daySessions = sessionsResult.rows.filter((s) => {
+    const days = s.days || '1111110'
+    return days[dayIndex] === '1'
+  })
+
+  if (daySessions.length === 0) {
+    await sendWhatsAppMessage(phone, 'No OPD sessions available on this day. Please choose another day.')
+    return
+  }
+
+  // Get booked counts per session for this date
+  const countResult = await query(
+    `SELECT session_id, COUNT(*) AS cnt FROM appointments
+     WHERE doctor_id = $1 AND appointment_date = $2 AND status = 'booked'
+     GROUP BY session_id`,
+    [doctorId, dateStr]
+  )
+  const sessionCounts: Record<string, number> = {}
+  for (const r of countResult.rows) {
+    sessionCounts[r.session_id] = parseInt(r.cnt, 10)
+  }
+
+  const dayLabel = formatDayLabel(dateStr)
+
+  const sessionItems = daySessions.map((s) => {
+    const booked = sessionCounts[s.id] || 0
+    const timeRange = `${formatTime(s.start_time)}-${formatTime(s.end_time)}`
+    const shortName = s.name.replace(/ OPD$/i, '')
+    return {
+      // appt_session_{sessionId}_{date}
+      id: `appt_session_${s.id}_${dateStr}`,
+      btnTitle: `${shortName} ${timeRange}`.substring(0, 20),
+      listTitle: `${s.name} ${timeRange}`.substring(0, 24),
+    }
+  })
+
+  const bodyText = `📅 *${dayLabel}*\nSelect a session:`
+
+  if (sessionItems.length <= 3) {
+    await sendWhatsAppButtons(phone, bodyText, sessionItems.map((s) => ({ id: s.id, title: s.btnTitle })))
+  } else {
+    await sendWhatsAppMenu(phone, bodyText, sessionItems.map((s) => ({ id: s.id, title: s.listTitle })))
+  }
+
+  // Save bot response
+  await query(
+    `INSERT INTO messages (patient_phone, doctor_id, direction, sender, content, msg_type)
+     VALUES ($1, $2, 'outbound', 'bot', $3, 'text')`,
+    [phone, doctorId, bodyText]
+  )
+
+  console.log(`[webhook][${requestId}] appointment sessions shown for ${dateStr}: ${daySessions.length}`)
+}
+
+/** Human label for a date: Today / Tomorrow / Wed, 28 Apr */
+function formatDayLabel(dateStr: string): string {
+  const today = new Date()
+  const todayStr = today.toISOString().split('T')[0]
+  const tomorrow = new Date(today)
+  tomorrow.setDate(today.getDate() + 1)
+  const tomorrowStr = tomorrow.toISOString().split('T')[0]
+
+  if (dateStr === todayStr) return 'Today'
+  if (dateStr === tomorrowStr) return 'Tomorrow'
+  const d = new Date(dateStr + 'T00:00:00')
+  return d.toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' })
+}
+
+// ──────────────────────────────────────────────
+// HANDLER: Appointment — Step 3: patient picks session, book token
 // ──────────────────────────────────────────────
 async function handleAppointmentSessionSelect(
   phone: string,
   doctorId: string,
   sessionId: string,
+  bookingDate: string,
   requestId: string
 ) {
   // Verify session belongs to this doctor
@@ -847,14 +1054,13 @@ async function handleAppointmentSessionSelect(
   }
 
   const session = sessionResult.rows[0]
-  const today = new Date().toISOString().split('T')[0]
 
-  // Check if patient already has any booking for today (any session)
+  // Check if patient already has any booking for this date
   const existingBooking = await query(
     `SELECT a.id, a.token_number, s.name AS session_name FROM appointments a
      JOIN opd_sessions s ON s.id = a.session_id
      WHERE a.patient_phone = $1 AND a.doctor_id = $2 AND a.appointment_date = $3 AND a.status = 'booked'`,
-    [phone, doctorId, today]
+    [phone, doctorId, bookingDate]
   )
 
   if (existingBooking.rows.length > 0) {
@@ -862,7 +1068,7 @@ async function handleAppointmentSessionSelect(
     const sn = existingBooking.rows[0].session_name
     await sendWhatsAppMessage(
       phone,
-      `You already have *Token #${t}* for ${sn} today. No need to book again.\n\nTo cancel, reply "cancel".`
+      `You already have *Token #${t}* for ${sn} on ${formatDayLabel(bookingDate)}.\n\nTo cancel, reply "cancel".`
     )
     return
   }
@@ -875,12 +1081,12 @@ async function handleAppointmentSessionSelect(
     const dailyCount = await query(
       `SELECT COUNT(*) as cnt FROM appointments
        WHERE doctor_id = $1 AND appointment_date = $2 AND status = 'booked'`,
-      [doctorId, today]
+      [doctorId, bookingDate]
     )
     if (parseInt(dailyCount.rows[0].cnt, 10) >= 10) {
       await sendWhatsAppMessage(
         phone,
-        'Sorry, all appointment slots are full for today. Please contact the clinic directly or try again tomorrow.'
+        'Sorry, all appointment slots are full for this day. Please contact the clinic directly or try another day.'
       )
       return
     }
@@ -890,7 +1096,7 @@ async function handleAppointmentSessionSelect(
   const patientResult = await query('SELECT name FROM patients WHERE phone = $1', [phone])
   const patientName = patientResult.rows[0]?.name || null
 
-  // Atomic token assignment — INSERT with subquery to avoid race condition
+  // Atomic token assignment
   const insertResult = await query(
     `INSERT INTO appointments (doctor_id, session_id, patient_phone, patient_name, token_number, appointment_date)
      VALUES ($1, $2, $3, $4,
@@ -898,7 +1104,7 @@ async function handleAppointmentSessionSelect(
         WHERE session_id = $2 AND appointment_date = $5 AND status != 'cancelled'),
        $5)
      RETURNING token_number`,
-    [doctorId, sessionId, phone, patientName, today]
+    [doctorId, sessionId, phone, patientName, bookingDate]
   )
   const tokenNumber = insertResult.rows[0].token_number
 
@@ -911,13 +1117,13 @@ async function handleAppointmentSessionSelect(
   const doc = docResult.rows[0]
   const drName = doc?.name ? formatDrName(doc.name) : 'Doctor'
 
-  // Format date
-  const dateStr = new Date().toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })
+  const dayLabel = formatDayLabel(bookingDate)
+  const sessionTime = `${formatTime(session.start_time)}–${formatTime(session.end_time)}`
 
   const reply =
     `✅ *Token #${tokenNumber} booked!*\n\n` +
     `📋 ${drName}'s ${session.name}\n` +
-    `📅 ${dateStr}\n` +
+    `📅 ${dayLabel} · ${sessionTime}\n` +
     `🔢 Token: *#${tokenNumber}*\n` +
     `${waitText}\n\n` +
     `To cancel, reply "cancel"`
@@ -931,7 +1137,7 @@ async function handleAppointmentSessionSelect(
     [phone, doctorId, reply]
   )
 
-  console.log(`[webhook][${requestId}] appointment booked: token #${tokenNumber} session=${session.name}`)
+  console.log(`[webhook][${requestId}] appointment booked: token #${tokenNumber} session=${session.name} date=${bookingDate}`)
 }
 
 // ──────────────────────────────────────────────
@@ -942,28 +1148,27 @@ async function handleAppointmentCancel(
   doctorId: string,
   requestId: string
 ) {
-  const today = new Date().toISOString().split('T')[0]
-
-  // Find latest active booking for today
+  // Find latest active booking (today or future)
   const booking = await query(
-    `SELECT a.id, a.token_number, s.name AS session_name
+    `SELECT a.id, a.token_number, a.appointment_date, s.name AS session_name
      FROM appointments a
      JOIN opd_sessions s ON s.id = a.session_id
      WHERE a.patient_phone = $1 AND a.doctor_id = $2
-       AND a.appointment_date = $3 AND a.status = 'booked'
-     ORDER BY a.created_at DESC LIMIT 1`,
-    [phone, doctorId, today]
+       AND a.appointment_date >= CURRENT_DATE AND a.status = 'booked'
+     ORDER BY a.appointment_date ASC, a.created_at DESC LIMIT 1`,
+    [phone, doctorId]
   )
 
   if (booking.rows.length === 0) {
-    await sendWhatsAppMessage(phone, 'You don\'t have any active appointments for today.')
+    await sendWhatsAppMessage(phone, 'You don\'t have any upcoming appointments to cancel.')
     return
   }
 
   const b = booking.rows[0]
   await query('UPDATE appointments SET status = $1 WHERE id = $2', ['cancelled', b.id])
 
-  const reply = `Your appointment (Token #${b.token_number}, ${b.session_name}) has been cancelled.`
+  const dayLabel = formatDayLabel(b.appointment_date.toISOString().split('T')[0])
+  const reply = `Your appointment (Token #${b.token_number}, ${b.session_name}, ${dayLabel}) has been cancelled.`
   await sendWhatsAppMessage(phone, reply)
 
   // Save bot response
