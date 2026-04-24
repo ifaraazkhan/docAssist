@@ -220,6 +220,12 @@ router.patch('/:id', requireAuth, async (req: Request, res: Response, next: Next
       }
     }
 
+    // Auto-sync add_to_menu when toggling "Book Appointment" active/inactive
+    let effectiveAddToMenu = addToMenu
+    if (protocolType === 'system' && protocolTitle === 'Book Appointment' && isActive !== undefined) {
+      effectiveAddToMenu = isActive
+    }
+
     // System protocol restrictions: can toggle isActive and edit replyText, but NOT change type or title
     if (protocolType === 'system') {
       if (title !== undefined || keywords !== undefined) {
@@ -251,7 +257,7 @@ router.patch('/:id', requireAuth, async (req: Request, res: Response, next: Next
 
     addField('reply_text', replyText)
     addField('is_active', isActive)
-    addField('add_to_menu', addToMenu)
+    addField('add_to_menu', effectiveAddToMenu)
 
     if (fields.length === 0) throw new BadRequest('No fields to update')
 
