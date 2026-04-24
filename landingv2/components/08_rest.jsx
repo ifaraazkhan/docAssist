@@ -266,7 +266,7 @@ function Footer() {
           ))}
         </div>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: 24, borderTop: '1px solid var(--rule)', fontSize: 12, color: 'var(--ink-3)', flexWrap: 'wrap', gap: 16 }}>
-          <div>© 2026 DrCliniq Technologies Pvt Ltd.</div>
+          <div>© 2026 Yesinfosolutions</div>
           <div className="mono" style={{ letterSpacing: '0.04em' }}>v3.0 · Apr 2026</div>
         </div>
       </div>

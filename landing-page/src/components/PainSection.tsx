@@ -49,9 +49,9 @@ export default function PainSection() {
               IST {time} · LIVE
             </div>
 
-            <h2 className="serif mb-5" style={{ fontSize: 'var(--fs-h1)', color: 'var(--paper)' }}>
+            <h2 className="mb-5" style={{ fontSize: 'var(--fs-h1)', fontWeight: 500, letterSpacing: '-0.03em', lineHeight: 1.05, color: 'var(--paper)' }}>
               {tone.kicker}<br />
-              <em className="italic" style={{ color: 'oklch(0.55 0.02 95)' }}>{tone.body}</em>
+              <span style={{ color: 'oklch(0.55 0.02 95)' }}>{tone.body}</span>
             </h2>
 
             <p className="mb-8" style={{ fontSize: 17, color: 'oklch(0.78 0.01 95)', maxWidth: 480, lineHeight: 1.55 }}>

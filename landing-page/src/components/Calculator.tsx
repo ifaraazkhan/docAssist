@@ -78,9 +78,9 @@ export default function Calculator() {
         <div className="grid grid-cols-1 lg:grid-cols-[1fr_1.2fr] gap-10 lg:gap-16 items-start">
           <div>
             <div className="eyebrow mb-4">Do the math</div>
-            <h2 className="serif mb-5" style={{ fontSize: 'var(--fs-h1)' }}>
+            <h2 className="mb-5" style={{ fontSize: 'var(--fs-h1)', fontWeight: 500, letterSpacing: '-0.03em', lineHeight: 1.05 }}>
               How much is{' '}
-              <em className="italic" style={{ color: 'var(--accent)' }}>your</em>{' '}
+              <span style={{ color: 'var(--accent)' }}>your</span>{' '}
               WhatsApp costing you?
             </h2>
             <p className="mb-8" style={{ fontSize: 17, color: 'var(--ink-2)', maxWidth: 480, lineHeight: 1.55 }}>

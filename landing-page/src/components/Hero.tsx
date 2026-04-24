@@ -61,15 +61,46 @@ export default function Hero() {
            <span className="live-dot" />    An Operating System for Indian Clinics
             </div>
 
+            <h1 className="mb-10" style={{ fontSize: 'clamp(30px, 5.5vw, 80px)', fontWeight: 500, letterSpacing: '-0.03em', lineHeight: 0.95 }}>
+              Your patients message.{' '}
+              DrCliniq{' '}
+              <span style={{ color: 'var(--accent)' }}>replies.</span>
+            </h1>
+            {/* Previous title versions preserved for easy switching:
+
+            -- Option C: medium weight, underlined "replies" --
+            <h1 className="mb-10" style={{ fontSize: 'clamp(30px, 5.5vw, 80px)', fontWeight: 500, letterSpacing: '-0.03em', lineHeight: 0.95 }}>
+              The clinic that{' '}
+              <span style={{ textDecoration: 'underline', textDecorationColor: 'var(--accent)', textUnderlineOffset: '6px', textDecorationThickness: '3px' }}>replies</span>{' '}
+              while you are{' '}
+              <span style={{ color: 'var(--accent)' }}>busy.</span>
+            </h1>
+
+            -- Option B: bold sans, tight tracking --
+            <h1 className="mb-10" style={{ fontSize: 'var(--fs-display)', fontWeight: 700, letterSpacing: '-0.045em', lineHeight: 0.95, paddingTop: 8, paddingBottom: 12 }}>
+              The clinic that replies{' '}
+              while you are{' '}
+              <span style={{ color: 'var(--accent)' }}>busy.</span>
+            </h1>
+
+            -- Option A: clean sans, light weight --
+            <h1 className="mb-9" style={{ fontSize: 'var(--fs-display)', fontWeight: 300, letterSpacing: '-0.03em', lineHeight: 1.08 }}>
+              The clinic that replies{' '}
+              while you are{' '}
+              <span style={{ color: 'var(--accent)' }}>busy.</span>
+            </h1>
+
+            -- Original: serif / magazine --
             <h1 className="serif mb-9" style={{ fontSize: 'var(--fs-display)' }}>
               The clinic that{' '}
               <em className="italic" style={{ color: 'var(--ink-3)' }}>replies</em>{' '}
               while you are{' '}
               <span style={{ color: 'var(--accent)' }}>busy.</span>
             </h1>
+            */}
 
             <p className="mb-9" style={{ fontSize: 19, color: 'var(--ink-2)', maxWidth: 540, lineHeight: 1.55 }}>
-              DrCliniq lives inside the WhatsApp number your patients already use. It triages in Hindi. It sends prescriptions. It books appointments. It wakes you only when it must.
+              Routine WhatsApp queries handled. Appointments booked. Urgent cases flagged — so you focus on medicine, not your inbox.
             </p>
 
             {/* Phone signup */}
@@ -86,20 +117,22 @@ export default function Hero() {
                     border: '1.5px solid var(--ink)',
                     borderRadius: 999,
                     padding: 5,
+                    overflow: 'hidden',
                   }}
                 >
                   <div
-                    className="flex items-center gap-1.5 mono"
+                    className="flex items-center gap-1.5 mono shrink-0"
                     style={{ padding: '0 10px', color: 'var(--ink-2)', fontSize: 13, borderRight: '1px solid var(--rule)' }}
                   >
                     🇮🇳 +91
                   </div>
                   <input
                     type="tel"
+                    aria-label="Enter your phone number"
                     value={phone}
                     onChange={(e) => setPhone(e.target.value.replace(/\D/g, '').slice(0, 10))}
                     placeholder="98765 43210"
-                    className="mono flex-1 border-none outline-none bg-transparent"
+                    className="mono flex-1 border-none outline-none bg-transparent min-w-0"
                     style={{ padding: '0 16px', fontSize: 16, color: 'var(--ink)', letterSpacing: '0.04em' }}
                   />
                   <button type="submit" className="btn-ed btn-accent-ed hidden sm:inline-flex" style={{ padding: '14px 24px', fontSize: 14 }}>
@@ -139,9 +172,9 @@ export default function Hero() {
 
             {/* Compliance row */}
             <div className="flex gap-4 lg:gap-5 flex-wrap pt-6" style={{ borderTop: '1px solid var(--rule)' }}>
-              {['ABDM Ready', 'DPDP Compliant', 'NMC Aligned', 'WhatsApp Business API'].map(c => (
+              {['DPDP Compliant', 'NMC Aligned', 'ABDM Coming Soon'].map(c => (
                 <div key={c} className="flex items-center gap-1.5 mono" style={{ fontSize: 11, color: 'var(--ink-3)', letterSpacing: '0.04em' }}>
-                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="3"><path d="M20 6L9 17l-5-5" /></svg>
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="3" aria-hidden="true"><path d="M20 6L9 17l-5-5" /></svg>
                   {c}
                 </div>
               ))}

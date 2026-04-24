@@ -232,7 +232,7 @@ export default function SharePage() {
             {/* Logo + brand */}
             <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 10, marginBottom: 20 }}>
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src="/icons/icon-192.svg" alt="" width={44} height={44} style={{ borderRadius: 12 }} />
+              <img src="/branding/app-icon/android/mipmap-xxxhdpi/dr-cliniq-icon.png" alt="" width={44} height={44} style={{ borderRadius: 12 }} />
               <span style={{ fontSize: 32, fontWeight: 800, color: "#0d9488", letterSpacing: "-0.02em" }}>
                 DrCliniq
               </span>

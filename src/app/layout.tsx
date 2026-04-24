@@ -19,6 +19,20 @@ export const metadata: Metadata = {
     statusBarStyle: "default",
     title: "DrCliniq",
   },
+  icons: {
+    icon: [
+      { url: "/branding/app-icon/android/mipmap-mdpi/dr-cliniq-icon.png", sizes: "48x48", type: "image/png" },
+      { url: "/branding/app-icon/android/mipmap-xhdpi/dr-cliniq-icon.png", sizes: "96x96", type: "image/png" },
+      { url: "/branding/app-icon/android/mipmap-xxxhdpi/dr-cliniq-icon.png", sizes: "192x192", type: "image/png" },
+      { url: "/branding/app-icon/android/playstore-icon.png", sizes: "512x512", type: "image/png" },
+    ],
+    apple: [
+      { url: "/branding/app-icon/ios/AppIcon.appiconset/Icon-App-60x60@2x.png", sizes: "120x120", type: "image/png" },
+      { url: "/branding/app-icon/ios/AppIcon.appiconset/Icon-App-60x60@3x.png", sizes: "180x180", type: "image/png" },
+      { url: "/branding/app-icon/ios/AppIcon.appiconset/Icon-App-76x76@2x.png", sizes: "152x152", type: "image/png" },
+      { url: "/branding/app-icon/ios/AppIcon.appiconset/Icon-App-83.5x83.5@2x.png", sizes: "167x167", type: "image/png" },
+    ],
+  },
 };
 
 export const viewport: Viewport = {
@@ -35,9 +49,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" className={plusJakarta.variable}>
-      <head>
-        <link rel="apple-touch-icon" href="/icons/icon-192.svg" />
-      </head>
+      <head />
       <body className="font-sans antialiased">
         <ServiceWorkerRegistrar />
         <Toaster

@@ -143,9 +143,9 @@ export default function DemoTheatre() {
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-end mb-10 gap-6">
           <div className="max-w-xl">
             <div className="eyebrow mb-4">The theatre</div>
-            <h2 className="serif" style={{ fontSize: 'var(--fs-h1)' }}>
+            <h2 style={{ fontSize: 'var(--fs-h1)', fontWeight: 500, letterSpacing: '-0.03em', lineHeight: 1.05 }}>
               Watch the AI{' '}
-              <em className="italic" style={{ color: 'var(--ink-3)' }}>think.</em>
+              <span style={{ color: 'var(--ink-3)' }}>think.</span>
             </h2>
           </div>
           <div className="mono hidden sm:block" style={{ fontSize: 11, color: 'var(--ink-3)', letterSpacing: '0.06em' }}>
@@ -172,7 +172,7 @@ export default function DemoTheatre() {
               <div className="mono" style={{ fontSize: 10, letterSpacing: '0.12em', marginBottom: 6, color: 'var(--ink-3)' }}>
                 0{i + 1} / 03
               </div>
-              <div className="serif" style={{ fontSize: 20, marginBottom: 4 }}>{sc.label}</div>
+              <div style={{ fontSize: 20, fontWeight: 500, letterSpacing: '-0.02em', marginBottom: 4 }}>{sc.label}</div>
               <div className="text-xs" style={{ color: 'var(--ink-3)' }}>{sc.sub}</div>
             </button>
           ))}

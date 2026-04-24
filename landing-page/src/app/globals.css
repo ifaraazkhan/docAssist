@@ -89,6 +89,7 @@
 }
 
 /* ===== Section labels ===== */
+@layer components {
 .eyebrow {
   font-family: var(--mono);
   font-size: 11px;
@@ -168,6 +169,7 @@
   opacity: 0.35;
   animation: livePulse 1.6s ease-out infinite;
 }
+} /* end @layer components */
 
 @keyframes livePulse {
   0% { transform: scale(0.8); opacity: 0.4; }

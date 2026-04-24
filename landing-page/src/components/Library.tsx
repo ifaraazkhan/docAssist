@@ -47,9 +47,9 @@ export default function Library() {
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-end mb-10 gap-6">
           <div className="max-w-xl">
             <div className="eyebrow mb-4">The Library</div>
-            <h2 className="serif" style={{ fontSize: 'var(--fs-h1)' }}>
+            <h2 style={{ fontSize: 'var(--fs-h1)', fontWeight: 500, letterSpacing: '-0.03em', lineHeight: 1.05 }}>
               50+ protocols.{' '}
-              <em className="italic" style={{ color: 'var(--ink-3)' }}>Edit any of them in plain English.</em>
+              <span style={{ color: 'var(--ink-3)' }}>Edit any of them in plain English.</span>
             </h2>
           </div>
           <input
@@ -128,7 +128,7 @@ export default function Library() {
                 <div className="mono mb-2" style={{ fontSize: 10, letterSpacing: '0.12em', color: 'var(--ink-3)' }}>
                   PROTOCOL · {sel.spec.toUpperCase()}
                 </div>
-                <h3 className="serif mb-3" style={{ fontSize: 28 }}>{sel.name}</h3>
+                <h3 className="mb-3" style={{ fontSize: 28, fontWeight: 500, letterSpacing: '-0.02em' }}>{sel.name}</h3>
                 <p className="mb-6" style={{ fontSize: 14, color: 'var(--ink-2)', lineHeight: 1.6 }}>{sel.preview}</p>
 
                 <div className="grid grid-cols-2 gap-3 mb-6">

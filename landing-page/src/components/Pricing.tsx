@@ -38,9 +38,9 @@ export default function Pricing() {
       <div className="container-ed">
         <div className="text-center max-w-2xl mx-auto mb-8">
           <div className="eyebrow mb-4 justify-center">Pricing</div>
-          <h2 className="serif mb-3" style={{ fontSize: 'var(--fs-h1)' }}>
+          <h2 className="mb-3" style={{ fontSize: 'var(--fs-h1)', fontWeight: 500, letterSpacing: '-0.03em', lineHeight: 1.05 }}>
             Less than your daily{' '}
-            <em className="italic" style={{ color: 'var(--accent)' }}>chai budget.</em>
+            <span style={{ color: 'var(--accent)' }}>chai budget.</span>
           </h2>
           <p style={{ fontSize: 17, color: 'var(--ink-2)' }}>
             Tell us your volume. We&apos;ll point at the right tier — no hard sell.

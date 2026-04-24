@@ -15,24 +15,59 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "DrCliniq — AI-Powered WhatsApp Automation for Indian Clinics",
+  title: "DrCliniq — AI Chatbot & LLM-Powered WhatsApp Automation for Indian Clinics",
   description:
-    "Smart protocol auto-replies, AI triage, Hindi + English support, and morning briefings — all on WhatsApp. Built exclusively for Indian doctors.",
+    "AI chatbot for doctors — auto-reply to patient WhatsApp messages using LLM-powered protocols. Hindi + English support, smart triage, appointment booking & morning briefings. Built for Indian clinics.",
   keywords: [
-    "WhatsApp automation",
-    "clinic management",
-    "doctor WhatsApp",
-    "India healthcare",
-    "AI clinic",
+    "AI chatbot for doctors",
+    "LLM healthcare India",
+    "WhatsApp automation clinic",
+    "AI medical chatbot",
+    "doctor WhatsApp bot",
+    "clinic AI assistant",
+    "patient WhatsApp automation",
+    "AI triage chatbot",
     "DrCliniq",
-    "medical protocols",
+    "medical protocol automation",
+    "healthcare LLM",
+    "AI clinic management",
+    "WhatsApp Business API healthcare",
+    "Hindi medical chatbot",
+    "India clinic software",
+    "AI appointment booking",
+    "DPDP compliant healthcare AI",
+    "NMC compliant chatbot",
   ],
   openGraph: {
-    title: "DrCliniq — Your Clinic, Intelligent",
+    title: "DrCliniq — AI Chatbot for Indian Clinics on WhatsApp",
     description:
-      "AI-powered WhatsApp automation built exclusively for Indian doctors.",
+      "LLM-powered WhatsApp automation — auto-replies, AI triage, Hindi support & appointment booking. Built exclusively for Indian doctors.",
     type: "website",
     locale: "en_IN",
+    siteName: "DrCliniq",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "DrCliniq — AI Chatbot & LLM-Powered WhatsApp Automation",
+    description:
+      "Auto-reply to patient WhatsApp messages using AI. Hindi + English, smart triage, appointment booking. Built for Indian clinics.",
+  },
+  alternates: {
+    canonical: "https://drcliniq.in",
+  },
+  robots: {
+    index: true,
+    follow: true,
+    googleBot: {
+      index: true,
+      follow: true,
+      "max-video-preview": -1,
+      "max-image-preview": "large",
+      "max-snippet": -1,
+    },
+  },
+  other: {
+    "google-site-verification": "",
   },
 };
 
@@ -50,6 +85,7 @@ export default function RootLayout({
   return (
     <html lang="en" className={`scroll-smooth ${inter.variable} ${jetbrainsMono.variable}`}>
       <head>
+        <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
         <link

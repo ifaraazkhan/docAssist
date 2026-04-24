@@ -116,9 +116,9 @@ export default function FutureFeatures() {
         {/* Header */}
         <div className="max-w-xl mb-10">
           <div className="eyebrow mb-4">How it works on WhatsApp</div>
-          <h2 className="serif" style={{ fontSize: 'var(--fs-h1)' }}>
+          <h2 style={{ fontSize: 'var(--fs-h1)', fontWeight: 500, letterSpacing: '-0.03em', lineHeight: 1.05 }}>
             Your patient taps.{' '}
-            <em className="italic" style={{ color: 'var(--accent)' }}>DrCliniq replies.</em>
+            <span style={{ color: 'var(--accent)' }}>DrCliniq replies.</span>
           </h2>
           <p className="mt-4" style={{ fontSize: 17, color: 'var(--ink-2)', lineHeight: 1.55 }}>
             Interactive menus on WhatsApp — patients pick from your protocols, get instant prescriptions. No app downloads, no training.
