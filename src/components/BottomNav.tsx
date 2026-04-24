@@ -15,6 +15,9 @@ const navItems = [
 export default function BottomNav() {
   const pathname = usePathname();
 
+  // Hide on patient detail page — it has its own chat input bar
+  if (pathname?.startsWith("/patients/")) return null;
+
   return (
     <nav className="bottom-nav" aria-label="Main navigation">
       <div className="max-w-lg mx-auto flex items-center justify-around">
