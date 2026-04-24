@@ -2,13 +2,14 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Inbox, Layers, Settings } from "lucide-react";
+import { Inbox, Layers, CalendarCheck, Settings } from "lucide-react";
 import { tap } from "@/lib/haptics";
 import { cn } from "@/lib/cn";
 
 const navItems = [
   { href: "/dashboard", icon: Inbox, label: "Inbox" },
   { href: "/protocols", icon: Layers, label: "Protocols" },
+  { href: "/appointments", icon: CalendarCheck, label: "Tokens" },
   { href: "/settings", icon: Settings, label: "Settings" },
 ];
 

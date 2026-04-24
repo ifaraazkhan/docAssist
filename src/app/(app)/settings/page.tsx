@@ -27,9 +27,13 @@ import {
   Check,
   Zap,
   Mail,
+  Plus,
+  Trash2,
+  Stethoscope,
 } from "lucide-react";
 import { useDoctor } from "@/lib/doctor-context";
-import { updateDoctorProfile, logoutAll, getSpecialties, createPaymentOrder, verifyPayment } from "@/lib/api";
+import { updateDoctorProfile, logoutAll, getSpecialties, createPaymentOrder, verifyPayment, getOpdSessions, createOpdSession, updateOpdSession, deleteOpdSession } from "@/lib/api";
+import type { OpdSession } from "@/lib/api";
 import { clearSession, saveDoctor } from "@/lib/auth";
 import { tap, success as hapticSuccess, error as hapticError } from "@/lib/haptics";
 import { cn } from "@/lib/cn";
@@ -94,6 +98,18 @@ export default function SettingsPage() {
   const [showLogout, setShowLogout] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
 
+  // OPD Sessions
+  const [opdSessions, setOpdSessions] = useState<OpdSession[]>([]);
+  const [opdLoading, setOpdLoading] = useState(true);
+  const [showAddSession, setShowAddSession] = useState(false);
+  const [newSessionName, setNewSessionName] = useState("Morning OPD");
+  const [newSessionStart, setNewSessionStart] = useState("09:00");
+  const [newSessionEnd, setNewSessionEnd] = useState("13:00");
+  const [newSessionDays, setNewSessionDays] = useState("1111110");
+  const [newSessionAvg, setNewSessionAvg] = useState(5);
+  const [savingSession, setSavingSession] = useState(false);
+  const [deletingSession, setDeletingSession] = useState<string | null>(null);
+
   // Load Razorpay script
   useEffect(() => {
     if (document.getElementById("razorpay-script")) return;
@@ -102,6 +118,14 @@ export default function SettingsPage() {
     s.src = "https://checkout.razorpay.com/v1/checkout.js";
     s.async = true;
     document.body.appendChild(s);
+  }, []);
+
+  // Load OPD sessions
+  useEffect(() => {
+    getOpdSessions()
+      .then((res) => setOpdSessions(res.sessions))
+      .catch(() => {})
+      .finally(() => setOpdLoading(false));
   }, []);
 
   const currentPlan = (doctor.plan ?? "free") as PlanKey;
@@ -199,6 +223,56 @@ export default function SettingsPage() {
     hapticError();
     clearSession();
     window.location.href = "/";
+  };
+
+  const handleAddOpdSession = async () => {
+    setSavingSession(true);
+    try {
+      const res = await createOpdSession({
+        name: newSessionName.trim(),
+        startTime: newSessionStart,
+        endTime: newSessionEnd,
+        days: newSessionDays,
+        avgMinutes: newSessionAvg,
+      });
+      setOpdSessions((prev) => [...prev, res.session]);
+      hapticSuccess();
+      toast("OPD session added");
+      setShowAddSession(false);
+      setNewSessionName("Evening OPD");
+      setNewSessionStart("16:00");
+      setNewSessionEnd("20:00");
+      setNewSessionDays("1111110");
+      setNewSessionAvg(5);
+    } catch {
+      // Error handled by API layer
+    } finally {
+      setSavingSession(false);
+    }
+  };
+
+  const handleDeleteOpdSession = async (id: string) => {
+    setDeletingSession(id);
+    try {
+      await deleteOpdSession(id);
+      setOpdSessions((prev) => prev.filter((s) => s.id !== id));
+      hapticSuccess();
+      toast("Session deleted");
+    } catch {
+      // Error handled by API layer
+    } finally {
+      setDeletingSession(null);
+    }
+  };
+
+  const handleToggleOpdSession = async (id: string, isActive: boolean) => {
+    tap();
+    setOpdSessions((prev) => prev.map((s) => s.id === id ? { ...s, isActive: !isActive } : s));
+    try {
+      await updateOpdSession(id, { isActive: !isActive });
+    } catch {
+      setOpdSessions((prev) => prev.map((s) => s.id === id ? { ...s, isActive } : s));
+    }
   };
 
   const planLabel = currentPlanInfo.label;
@@ -471,6 +545,190 @@ export default function SettingsPage() {
             </div>
           </div>
         </div>
+      </motion.div>
+
+      {/* OPD Sessions */}
+      <motion.div
+        initial={{ opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.11 }}
+        className="bg-white rounded-xl border border-gray-100 shadow-soft mb-5 overflow-hidden"
+      >
+        <div className="flex items-center justify-between px-4 pt-4 pb-2">
+          <div className="flex items-center gap-2">
+            <Stethoscope size={16} className="text-brand-600" />
+            <h3 className="text-sm font-semibold text-text-primary">OPD Sessions</h3>
+          </div>
+          {!showAddSession && (
+            <button
+              onClick={() => { tap(); setShowAddSession(true); }}
+              disabled={currentPlan === "free" && opdSessions.length >= 2}
+              className="flex items-center gap-1 text-xs font-medium text-brand-600 disabled:opacity-40"
+            >
+              <Plus size={14} /> Add
+            </button>
+          )}
+        </div>
+        <p className="px-4 text-[11px] text-text-secondary mb-3">
+          Required to activate the &quot;Book Appointment&quot; protocol
+          {currentPlan === "free" && ` · ${opdSessions.length}/2 sessions (Free plan)`}
+        </p>
+
+        {opdLoading ? (
+          <div className="px-4 pb-4">
+            <div className="h-16 bg-gray-50 rounded-lg animate-pulse" />
+          </div>
+        ) : (
+          <>
+            {opdSessions.length > 0 && (
+              <div className="divide-y divide-gray-50">
+                {opdSessions.map((session) => (
+                  <div key={session.id} className="px-4 py-3 flex items-center gap-3">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-text-primary">{session.name}</p>
+                      <p className="text-[11px] text-text-secondary mt-0.5">
+                        {session.startTime}–{session.endTime} · {session.avgMinutes} min/patient
+                      </p>
+                      <div className="flex gap-0.5 mt-1">
+                        {DAYS.map((d, i) => (
+                          <span
+                            key={d}
+                            className={cn(
+                              "w-5 h-5 rounded text-[9px] flex items-center justify-center font-medium",
+                              session.days?.[i] === "1"
+                                ? "bg-brand-100 text-brand-700"
+                                : "bg-gray-50 text-gray-300"
+                            )}
+                          >
+                            {d[0]}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => handleToggleOpdSession(session.id, session.isActive)}
+                      role="switch"
+                      aria-checked={session.isActive}
+                      className={cn(
+                        "w-11 h-[26px] rounded-full transition-colors relative flex-shrink-0",
+                        session.isActive ? "bg-brand-500" : "bg-gray-300"
+                      )}
+                    >
+                      <span
+                        className={cn(
+                          "absolute top-[3px] left-[3px] w-5 h-5 bg-white rounded-full shadow transition-transform",
+                          session.isActive ? "translate-x-[18px]" : "translate-x-0"
+                        )}
+                      />
+                    </button>
+                    <button
+                      onClick={() => handleDeleteOpdSession(session.id)}
+                      disabled={deletingSession === session.id}
+                      className="p-1.5 text-gray-400 hover:text-red-500"
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {opdSessions.length === 0 && !showAddSession && (
+              <div className="px-4 pb-4 text-center">
+                <p className="text-xs text-text-secondary">No OPD sessions yet</p>
+              </div>
+            )}
+
+            {showAddSession && (
+              <div className="px-4 pb-4 space-y-3 border-t border-gray-50 pt-3">
+                <div>
+                  <label className="text-xs font-medium text-text-secondary mb-1 block">Session Name</label>
+                  <input
+                    value={newSessionName}
+                    onChange={(e) => setNewSessionName(e.target.value)}
+                    placeholder="e.g. Morning OPD"
+                    className="input-field"
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-xs font-medium text-text-secondary mb-1 block">Start Time</label>
+                    <input
+                      type="time"
+                      value={newSessionStart}
+                      onChange={(e) => setNewSessionStart(e.target.value)}
+                      className="input-field"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-text-secondary mb-1 block">End Time</label>
+                    <input
+                      type="time"
+                      value={newSessionEnd}
+                      onChange={(e) => setNewSessionEnd(e.target.value)}
+                      className="input-field"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-text-secondary mb-1 block">Active Days</label>
+                  <div className="flex gap-1.5">
+                    {DAYS.map((d, i) => (
+                      <button
+                        key={d}
+                        type="button"
+                        onClick={() => {
+                          tap();
+                          const arr = newSessionDays.split("");
+                          arr[i] = arr[i] === "1" ? "0" : "1";
+                          setNewSessionDays(arr.join(""));
+                        }}
+                        className={cn(
+                          "flex-1 py-2 rounded-lg text-xs font-medium min-h-[36px] border transition-colors",
+                          newSessionDays[i] === "1"
+                            ? "bg-brand-500 text-white border-brand-500"
+                            : "bg-gray-50 text-text-secondary border-gray-200"
+                        )}
+                      >
+                        {d}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-text-secondary mb-1 block">Avg. Minutes per Patient</label>
+                  <input
+                    type="number"
+                    min={1}
+                    max={60}
+                    value={newSessionAvg}
+                    onChange={(e) => setNewSessionAvg(parseInt(e.target.value) || 5)}
+                    className="input-field"
+                  />
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setShowAddSession(false)}
+                    className="flex-1 py-2.5 bg-gray-100 rounded-xl text-sm font-medium min-h-[44px]"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleAddOpdSession}
+                    disabled={savingSession || !newSessionName.trim()}
+                    className="flex-1 py-2.5 bg-brand-500 text-white rounded-xl text-sm font-semibold min-h-[44px] disabled:opacity-50 flex items-center justify-center gap-2"
+                  >
+                    {savingSession ? (
+                      <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    ) : (
+                      <><Plus size={14} /> Add Session</>
+                    )}
+                  </button>
+                </div>
+              </div>
+            )}
+          </>
+        )}
       </motion.div>
 
       {/* Plan details */}

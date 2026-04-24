@@ -18,6 +18,7 @@ import noteRoutes from './routes/notes'
 import webhookRoutes from './routes/webhook'
 import paymentRoutes from './routes/payments'
 import specialtyRoutes from './routes/specialties'
+import appointmentRoutes from './routes/appointments'
 
 const app = express()
 
@@ -49,6 +50,7 @@ app.use('/api/notes', noteRoutes)
 app.use('/api/webhook/whatsapp', webhookRoutes)
 app.use('/api/payments', paymentRoutes)
 app.use('/api/specialties', specialtyRoutes)
+app.use('/api/appointments', appointmentRoutes)
 
 // ── Health check ──
 app.get('/health', async (_req, res) => {

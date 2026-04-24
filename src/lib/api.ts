@@ -300,6 +300,48 @@ export const getPaymentHistory = () =>
     }[];
   }>("/api/payments/history");
 
+// ── Appointments ────────────────────────────────────────────────
+
+export const getOpdSessions = () =>
+  request<{ success: boolean; sessions: OpdSession[] }>("/api/appointments/sessions");
+
+export const createOpdSession = (data: {
+  name: string;
+  startTime: string;
+  endTime: string;
+  days?: string;
+  avgMinutes?: number;
+}) =>
+  request<{ success: boolean; session: OpdSession }>("/api/appointments/sessions", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+
+export const updateOpdSession = (id: string, data: Partial<OpdSession>) =>
+  request<{ success: boolean; session: OpdSession }>(
+    `/api/appointments/sessions/${encodeURIComponent(id)}`,
+    { method: "PATCH", body: JSON.stringify(data) }
+  );
+
+export const deleteOpdSession = (id: string) =>
+  request<{ success: boolean }>(
+    `/api/appointments/sessions/${encodeURIComponent(id)}`,
+    { method: "DELETE" }
+  );
+
+export const getAppointments = (date?: string) => {
+  const qs = date ? `?date=${date}` : "";
+  return request<{ success: boolean; appointments: Appointment[]; date: string }>(
+    `/api/appointments${qs}`
+  );
+};
+
+export const updateAppointment = (id: string, data: { status: string }) =>
+  request<{ success: boolean }>(
+    `/api/appointments/${encodeURIComponent(id)}`,
+    { method: "PATCH", body: JSON.stringify(data) }
+  );
+
 // ── Types ───────────────────────────────────────────────────────
 
 export interface Doctor {
@@ -385,5 +427,33 @@ export interface PrivateNote {
   patientId: string;
   doctorId: string;
   content: string;
+  createdAt: string;
+}
+
+export interface OpdSession {
+  id: string;
+  name: string;
+  startTime: string;
+  endTime: string;
+  days: string;
+  avgMinutes: number;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt?: string;
+}
+
+export interface Appointment {
+  id: string;
+  sessionId: string;
+  sessionName: string;
+  sessionStart: string;
+  sessionEnd: string;
+  patientPhone: string;
+  patientName: string | null;
+  tokenNumber: number;
+  appointmentDate: string;
+  status: "booked" | "cancelled" | "completed" | "no_show";
+  bookedVia: string;
+  avgMinutes: number;
   createdAt: string;
 }

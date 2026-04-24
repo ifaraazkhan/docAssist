@@ -10,6 +10,7 @@ import { generateDoctorCode, generateSlug } from '../lib/clinic-code'
 const router = Router()
 
 const GREETINGS = ['hi', 'hello', 'hey', 'helo', 'menu', 'help', 'start', 'namaste', 'namaskar']
+const CANCEL_KEYWORDS = ['cancel appointment', 'cancel token', 'cancel booking', 'cancel opd']
 const DOCTOR_SIGNUP_CODE = 'DOCTOR_SIGNUP'
 
 // ──────────────────────────────────────────────
@@ -432,6 +433,13 @@ async function handleDoctorOnboarding(
         [doc.id, ['clinic', 'details', 'info', 'about', 'address', 'timing', 'hours'], clinicText]
       )
 
+      // Create "Book Appointment" system protocol (inactive by default)
+      await client.query(
+        `INSERT INTO protocols (doctor_id, title, keywords, reply_text, protocol_type, is_active, add_to_menu)
+         VALUES ($1, 'Book Appointment', $2, $3, 'system', false, false)`,
+        [doc.id, ['appointment', 'book', 'token', 'opd', 'booking'], 'Book an appointment']
+      )
+
       // Generate magic link for PWA login
       const token = crypto.randomBytes(32).toString('hex')
       const expiresAt = new Date(Date.now() + 60 * 60 * 1000)
@@ -604,6 +612,19 @@ async function handleProtocolMatching(
   const lowerText = text.toLowerCase().trim()
   const isGreeting = GREETINGS.includes(lowerText)
 
+  // ── Appointment session selection (interactive reply) ──
+  if (text.startsWith('appt_session_')) {
+    const sessionId = text.replace('appt_session_', '')
+    await handleAppointmentSessionSelect(phone, doctorId, sessionId, requestId)
+    return
+  }
+
+  // ── Cancel appointment ──
+  if (CANCEL_KEYWORDS.some((kw) => lowerText.includes(kw))) {
+    await handleAppointmentCancel(phone, doctorId, requestId)
+    return
+  }
+
   // Fetch menu protocols
   const menuProtocols = await query(
     `SELECT id, title FROM protocols
@@ -643,6 +664,12 @@ async function handleProtocolMatching(
 
   if (matched) {
     let reply: string
+
+    // System "Book Appointment" protocol — show OPD sessions
+    if (matched.protocol_type === 'system' && matched.title === 'Book Appointment') {
+      await handleAppointmentBooking(phone, doctorId, matched.id, requestId)
+      return
+    }
 
     // System "Clinic Details" protocol — build dynamically from doctor profile
     if (matched.protocol_type === 'system' && matched.title === 'Clinic Details') {
@@ -716,6 +743,220 @@ async function handleProtocolMatching(
 
     console.log(`[webhook][${requestId}] no match, marked urgent`)
   }
+}
+
+// ──────────────────────────────────────────────
+// HANDLER: Appointment booking — show sessions
+// ──────────────────────────────────────────────
+async function handleAppointmentBooking(
+  phone: string,
+  doctorId: string,
+  protocolId: string,
+  requestId: string
+) {
+  const today = new Date()
+  const dayIndex = (today.getDay() + 6) % 7 // JS: 0=Sun → we need 0=Mon
+
+  // Get active sessions for today
+  const sessionsResult = await query(
+    `SELECT id, name, start_time, end_time, avg_minutes
+     FROM opd_sessions
+     WHERE doctor_id = $1 AND is_active = true
+     ORDER BY start_time ASC`,
+    [doctorId]
+  )
+
+  // Filter sessions that run today
+  const todaySessions = sessionsResult.rows.filter((s) => {
+    const days = s.days || '1111110'
+    return days[dayIndex] === '1'
+  })
+
+  if (todaySessions.length === 0) {
+    await sendWhatsAppMessage(phone, 'Sorry, no OPD sessions are available today. Please try again on a working day.')
+    return
+  }
+
+  // Increment protocol usage
+  await query('UPDATE protocols SET usage_count = usage_count + 1 WHERE id = $1', [protocolId])
+
+  // Show sessions as buttons (≤3) or list (>3)
+  const docResult = await query('SELECT name, clinic_name FROM doctors WHERE id = $1', [doctorId])
+  const doc = docResult.rows[0]
+  const clinicLabel = doc?.clinic_name || formatDrName(doc?.name || '')
+
+  const sessionItems = todaySessions.map((s) => ({
+    id: `appt_session_${s.id}`,
+    title: `${s.name} (${s.start_time.substring(0, 5)}–${s.end_time.substring(0, 5)})`.substring(0, 24),
+  }))
+
+  const bodyText = `📅 *Book Appointment*\n${clinicLabel}\n\nSelect an OPD session:`
+
+  if (sessionItems.length <= 3) {
+    await sendWhatsAppButtons(phone, bodyText, sessionItems)
+  } else {
+    await sendWhatsAppMenu(phone, bodyText, sessionItems)
+  }
+
+  // Save bot response
+  await query(
+    `INSERT INTO messages (patient_phone, doctor_id, direction, sender, content, msg_type, protocol_id)
+     VALUES ($1, $2, 'outbound', 'bot', $3, 'text', $4)`,
+    [phone, doctorId, bodyText, protocolId]
+  )
+
+  console.log(`[webhook][${requestId}] appointment sessions shown: ${todaySessions.length}`)
+}
+
+// ──────────────────────────────────────────────
+// HANDLER: Appointment — patient selects session
+// ──────────────────────────────────────────────
+async function handleAppointmentSessionSelect(
+  phone: string,
+  doctorId: string,
+  sessionId: string,
+  requestId: string
+) {
+  // Verify session belongs to this doctor
+  const sessionResult = await query(
+    'SELECT id, name, start_time, end_time, avg_minutes FROM opd_sessions WHERE id = $1 AND doctor_id = $2 AND is_active = true',
+    [sessionId, doctorId]
+  )
+
+  if (sessionResult.rows.length === 0) {
+    await sendWhatsAppMessage(phone, 'This session is no longer available. Please try booking again.')
+    return
+  }
+
+  const session = sessionResult.rows[0]
+  const today = new Date().toISOString().split('T')[0]
+
+  // Check if patient already has a booking for this session today
+  const existingBooking = await query(
+    `SELECT id, token_number FROM appointments
+     WHERE patient_phone = $1 AND session_id = $2 AND appointment_date = $3 AND status = 'booked'`,
+    [phone, sessionId, today]
+  )
+
+  if (existingBooking.rows.length > 0) {
+    const t = existingBooking.rows[0].token_number
+    await sendWhatsAppMessage(
+      phone,
+      `You already have *Token #${t}* for ${session.name} today. No need to book again.\n\nTo cancel, reply "cancel appointment".`
+    )
+    return
+  }
+
+  // Free plan: check 10/day cap across all sessions
+  const planResult = await query('SELECT plan FROM doctors WHERE id = $1', [doctorId])
+  const plan = planResult.rows[0]?.plan || 'free'
+
+  if (plan === 'free') {
+    const dailyCount = await query(
+      `SELECT COUNT(*) as cnt FROM appointments
+       WHERE doctor_id = $1 AND appointment_date = $2 AND status = 'booked'`,
+      [doctorId, today]
+    )
+    if (parseInt(dailyCount.rows[0].cnt, 10) >= 10) {
+      await sendWhatsAppMessage(
+        phone,
+        'Sorry, all appointment slots are full for today. Please contact the clinic directly or try again tomorrow.'
+      )
+      return
+    }
+  }
+
+  // Get next token number for this session today
+  const maxToken = await query(
+    `SELECT COALESCE(MAX(token_number), 0) as max_token FROM appointments
+     WHERE session_id = $1 AND appointment_date = $2 AND status != 'cancelled'`,
+    [sessionId, today]
+  )
+  const tokenNumber = parseInt(maxToken.rows[0].max_token, 10) + 1
+
+  // Get patient name
+  const patientResult = await query('SELECT name FROM patients WHERE phone = $1', [phone])
+  const patientName = patientResult.rows[0]?.name || null
+
+  // Book the appointment
+  await query(
+    `INSERT INTO appointments (doctor_id, session_id, patient_phone, patient_name, token_number, appointment_date)
+     VALUES ($1, $2, $3, $4, $5, $6)`,
+    [doctorId, sessionId, phone, patientName, tokenNumber, today]
+  )
+
+  // Calculate estimated wait
+  const waitMinutes = (tokenNumber - 1) * (session.avg_minutes || 5)
+  const waitText = waitMinutes > 0 ? `⏱️ Est. wait: ~${waitMinutes} min from session start` : '⏱️ You are first in queue!'
+
+  // Get doctor name
+  const docResult = await query('SELECT name, clinic_name FROM doctors WHERE id = $1', [doctorId])
+  const doc = docResult.rows[0]
+  const drName = doc?.name ? formatDrName(doc.name) : 'Doctor'
+
+  // Format date
+  const dateStr = new Date().toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })
+
+  const reply =
+    `✅ *Token #${tokenNumber} booked!*\n\n` +
+    `📋 ${drName}'s ${session.name}\n` +
+    `📅 ${dateStr}\n` +
+    `🔢 Token: *#${tokenNumber}*\n` +
+    `${waitText}\n\n` +
+    `To cancel, reply "cancel appointment"`
+
+  await sendWhatsAppMessage(phone, reply)
+
+  // Save bot response
+  await query(
+    `INSERT INTO messages (patient_phone, doctor_id, direction, sender, content, msg_type)
+     VALUES ($1, $2, 'outbound', 'bot', $3, 'text')`,
+    [phone, doctorId, reply]
+  )
+
+  console.log(`[webhook][${requestId}] appointment booked: token #${tokenNumber} session=${session.name}`)
+}
+
+// ──────────────────────────────────────────────
+// HANDLER: Cancel appointment
+// ──────────────────────────────────────────────
+async function handleAppointmentCancel(
+  phone: string,
+  doctorId: string,
+  requestId: string
+) {
+  const today = new Date().toISOString().split('T')[0]
+
+  // Find latest active booking for today
+  const booking = await query(
+    `SELECT a.id, a.token_number, s.name AS session_name
+     FROM appointments a
+     JOIN opd_sessions s ON s.id = a.session_id
+     WHERE a.patient_phone = $1 AND a.doctor_id = $2
+       AND a.appointment_date = $3 AND a.status = 'booked'
+     ORDER BY a.created_at DESC LIMIT 1`,
+    [phone, doctorId, today]
+  )
+
+  if (booking.rows.length === 0) {
+    await sendWhatsAppMessage(phone, 'You don\'t have any active appointments for today.')
+    return
+  }
+
+  const b = booking.rows[0]
+  await query('UPDATE appointments SET status = $1 WHERE id = $2', ['cancelled', b.id])
+
+  const reply = `Your appointment (Token #${b.token_number}, ${b.session_name}) has been cancelled.`
+  await sendWhatsAppMessage(phone, reply)
+
+  // Save bot response
+  await query(
+    `INSERT INTO messages (patient_phone, doctor_id, direction, sender, content, msg_type)
+     VALUES ($1, $2, 'outbound', 'bot', $3, 'text')`,
+    [phone, doctorId, reply]
+  )
+
+  console.log(`[webhook][${requestId}] appointment cancelled: token #${b.token_number}`)
 }
 
 export default router

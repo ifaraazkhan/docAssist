@@ -196,12 +196,29 @@ router.patch('/:id', requireAuth, async (req: Request, res: Response, next: Next
 
     // Verify ownership
     const existing = await query(
-      'SELECT id, protocol_type FROM protocols WHERE id = $1 AND doctor_id = $2 AND deleted_at IS NULL',
+      'SELECT id, protocol_type, title FROM protocols WHERE id = $1 AND doctor_id = $2 AND deleted_at IS NULL',
       [protocolId, doctorId]
     )
     if (existing.rows.length === 0) throw new NotFound('Protocol not found')
 
     const protocolType = existing.rows[0].protocol_type
+    const protocolTitle = existing.rows[0].title
+
+    // Validate OPD setup before activating "Book Appointment"
+    if (isActive === true && protocolType === 'system' && protocolTitle === 'Book Appointment') {
+      const sessCount = await query(
+        'SELECT COUNT(*) as cnt FROM opd_sessions WHERE doctor_id = $1 AND is_active = true',
+        [doctorId]
+      )
+      if (parseInt(sessCount.rows[0].cnt, 10) === 0) {
+        res.status(400).json({
+          error: 'Set up at least one OPD session before activating appointments',
+          code: 'APPOINTMENT_SETUP_REQUIRED',
+          missing: ['opd_sessions'],
+        })
+        return
+      }
+    }
 
     // System protocol restrictions: can toggle isActive and edit replyText, but NOT change type or title
     if (protocolType === 'system') {
