@@ -9,11 +9,13 @@ const plusJakarta = Plus_Jakarta_Sans({
   variable: "--font-sans",
 });
 
+const v = process.env.NEXT_PUBLIC_BUILD_ID || "dev";
+const versioned = (path: string) => `${path}?v=${v}`;
+
 export const metadata: Metadata = {
   title: "DrCliniq — Smart WhatsApp Assistant for Clinics",
   description:
     "Automate patient queries, triage urgent messages, and manage clinical protocols from a single dashboard.",
-  manifest: "/manifest.json",
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",
@@ -21,16 +23,16 @@ export const metadata: Metadata = {
   },
   icons: {
     icon: [
-      { url: "/branding/app-icon/android/mipmap-mdpi/dr-cliniq-icon.png", sizes: "48x48", type: "image/png" },
-      { url: "/branding/app-icon/android/mipmap-xhdpi/dr-cliniq-icon.png", sizes: "96x96", type: "image/png" },
-      { url: "/branding/app-icon/android/mipmap-xxxhdpi/dr-cliniq-icon.png", sizes: "192x192", type: "image/png" },
-      { url: "/branding/app-icon/android/playstore-icon.png", sizes: "512x512", type: "image/png" },
+      { url: versioned("/branding/app-icon/android/mipmap-mdpi/dr-cliniq-icon.png"), sizes: "48x48", type: "image/png" },
+      { url: versioned("/branding/app-icon/android/mipmap-xhdpi/dr-cliniq-icon.png"), sizes: "96x96", type: "image/png" },
+      { url: versioned("/branding/app-icon/android/mipmap-xxxhdpi/dr-cliniq-icon.png"), sizes: "192x192", type: "image/png" },
+      { url: versioned("/branding/app-icon/android/playstore-icon.png"), sizes: "512x512", type: "image/png" },
     ],
     apple: [
-      { url: "/branding/app-icon/ios/AppIcon.appiconset/Icon-App-60x60@2x.png", sizes: "120x120", type: "image/png" },
-      { url: "/branding/app-icon/ios/AppIcon.appiconset/Icon-App-60x60@3x.png", sizes: "180x180", type: "image/png" },
-      { url: "/branding/app-icon/ios/AppIcon.appiconset/Icon-App-76x76@2x.png", sizes: "152x152", type: "image/png" },
-      { url: "/branding/app-icon/ios/AppIcon.appiconset/Icon-App-83.5x83.5@2x.png", sizes: "167x167", type: "image/png" },
+      { url: versioned("/branding/app-icon/ios/AppIcon.appiconset/Icon-App-60x60@2x.png"), sizes: "120x120", type: "image/png" },
+      { url: versioned("/branding/app-icon/ios/AppIcon.appiconset/Icon-App-60x60@3x.png"), sizes: "180x180", type: "image/png" },
+      { url: versioned("/branding/app-icon/ios/AppIcon.appiconset/Icon-App-76x76@2x.png"), sizes: "152x152", type: "image/png" },
+      { url: versioned("/branding/app-icon/ios/AppIcon.appiconset/Icon-App-83.5x83.5@2x.png"), sizes: "167x167", type: "image/png" },
     ],
   },
 };
