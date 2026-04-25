@@ -13,6 +13,11 @@ const GREETINGS = ['hi', 'hello', 'hey', 'helo', 'menu', 'help', 'start', 'namas
 const CANCEL_KEYWORDS = ['cancel appointment', 'cancel token', 'cancel booking', 'cancel opd', 'cancel']
 const DOCTOR_SIGNUP_CODE = 'DOCTOR_SIGNUP'
 
+// Doctor menu button IDs (sent when an onboarded doctor messages the bot)
+const MENU_DASHBOARD = 'DR_MENU_DASHBOARD'
+const MENU_SHARE = 'DR_MENU_SHARE'
+const MENU_REFER = 'DR_MENU_REFER'
+
 // ──────────────────────────────────────────────
 // GET — Meta webhook verification
 // ──────────────────────────────────────────────
@@ -130,34 +135,31 @@ router.post('/', webhookVerify, async (req: Request, res: Response) => {
 
     // ── BRANCH 4: Is this phone a registered doctor? ──
     const doctorCheck = await query(
-      'SELECT id, name, onboarding_complete, jwt_version FROM doctors WHERE phone = $1',
+      'SELECT id, name, clinic_name, doctor_code, phone, onboarding_complete, jwt_version FROM doctors WHERE phone = $1',
       [from]
     )
     if (doctorCheck.rows.length > 0) {
-      const doc = doctorCheck.rows[0]
+      const doc = doctorCheck.rows[0] as {
+        id: string
+        name: string | null
+        clinic_name: string | null
+        doctor_code: string | null
+        phone: string
+        onboarding_complete: boolean
+        jwt_version: number
+      }
       if (doc.onboarding_complete) {
-        const lowerText = trimmedText.toLowerCase()
-        const wantsLogin = GREETINGS.includes(lowerText) ||
-          ['login', 'dashboard', 'link', 'open', 'app'].includes(lowerText)
-
-        if (wantsLogin) {
-          // Send magic link
-          const token = crypto.randomBytes(32).toString('hex')
-          const expiresAt = new Date(Date.now() + 60 * 60 * 1000)
-          await query('UPDATE magic_links SET used = true WHERE doctor_id = $1 AND used = false', [doc.id])
-          await query(
-            'INSERT INTO magic_links (token, doctor_id, purpose, expires_at) VALUES ($1, $2, $3, $4)',
-            [token, doc.id, 'login', expiresAt]
-          )
-          const link = `${process.env.APP_URL || 'http://localhost:3000'}/auth/verify?token=${token}`
-          await sendWhatsAppCTAButton(
-            from,
-            `Welcome back, ${formatDrName(doc.name || '')}.\n\n_Link expires in 60 minutes._`,
-            'Open Dashboard',
-            link
-          )
+        // Button taps from the doctor menu
+        if (upperText === MENU_DASHBOARD.toUpperCase()) {
+          await sendDoctorDashboardLink(from, doc, requestId)
+        } else if (upperText === MENU_SHARE.toUpperCase()) {
+          await sendDoctorShareLink(from, doc)
+        } else if (upperText === MENU_REFER.toUpperCase()) {
+          await sendDoctorReferralLink(from, doc)
+        } else {
+          // Any other message → show the welcome menu with 3 options
+          await sendDoctorMenu(from, doc)
         }
-        // Silently ignore other messages from doctors (they use the PWA to chat)
       }
       res.status(200).send('OK')
       return
@@ -258,6 +260,108 @@ function formatDrName(name: string): string {
   return clean ? `Dr. ${clean}` : 'Doctor'
 }
 
+/** Best label for a doctor: Dr. <name> → clinic_name → "Doctor" */
+function preferredName(doc: { name: string | null; clinic_name: string | null }): string {
+  if (doc.name) return formatDrName(doc.name)
+  if (doc.clinic_name) return doc.clinic_name
+  return 'Doctor'
+}
+
+// ──────────────────────────────────────────────
+// HANDLER: Doctor menu — welcome card with 3 reply buttons
+// ──────────────────────────────────────────────
+async function sendDoctorMenu(
+  phone: string,
+  doc: { name: string | null; clinic_name: string | null }
+) {
+  await sendWhatsAppButtons(
+    phone,
+    `Welcome back, ${preferredName(doc)} 👋\n\nWhat would you like to do?`,
+    [
+      { id: MENU_DASHBOARD, title: 'Open Dashboard' },
+      { id: MENU_SHARE, title: 'Share Link' },
+      { id: MENU_REFER, title: 'Referral Link' },
+    ]
+  )
+}
+
+// ──────────────────────────────────────────────
+// HANDLER: Send magic-link CTA to doctor
+// ──────────────────────────────────────────────
+async function sendDoctorDashboardLink(
+  phone: string,
+  doc: { id: string; name: string | null; clinic_name: string | null },
+  requestId: string
+) {
+  const token = crypto.randomBytes(32).toString('hex')
+  const expiresAt = new Date(Date.now() + 60 * 60 * 1000)
+  await query('UPDATE magic_links SET used = true WHERE doctor_id = $1 AND used = false', [doc.id])
+  await query(
+    'INSERT INTO magic_links (token, doctor_id, purpose, expires_at) VALUES ($1, $2, $3, $4)',
+    [token, doc.id, 'login', expiresAt]
+  )
+  const link = `${process.env.APP_URL || 'http://localhost:3000'}/auth/verify?token=${token}`
+  await sendWhatsAppCTAButton(
+    phone,
+    `${preferredName(doc)}, your dashboard is ready.\n\n_Link expires in 60 minutes._`,
+    'Open Dashboard',
+    link
+  )
+  console.log(`[webhook][${requestId}] dashboard link sent to doctor ${doc.id}`)
+}
+
+// ──────────────────────────────────────────────
+// HANDLER: Send forwardable clinic share link
+// Mirrors backend/src/routes/doctor.ts share-info logic
+// ──────────────────────────────────────────────
+async function sendDoctorShareLink(
+  phone: string,
+  doc: { name: string | null; clinic_name: string | null; doctor_code: string | null; phone: string }
+) {
+  if (!doc.doctor_code) {
+    await sendWhatsAppMessage(
+      phone,
+      'Your clinic code is not generated yet. Please complete setup in the dashboard first.'
+    )
+    return
+  }
+  const waPhone = process.env.WHATSAPP_BUSINESS_PHONE || doc.phone
+  const prefilled = `Hi! Clinic code: ${doc.doctor_code}`
+  const shareUrl = `https://wa.me/${waPhone}?text=${encodeURIComponent(prefilled)}`
+  const label = doc.clinic_name || preferredName(doc)
+  await sendWhatsAppMessage(
+    phone,
+    `👋 Connect with *${label}* on WhatsApp:\n\n` +
+    `${shareUrl}\n\n` +
+    `_Forward this to your patients — they tap the link, WhatsApp opens, they're connected._`
+  )
+}
+
+// ──────────────────────────────────────────────
+// HANDLER: Send forwardable doctor-to-doctor referral link
+// Mirrors PWA settings/refer page
+// ──────────────────────────────────────────────
+async function sendDoctorReferralLink(
+  phone: string,
+  doc: { doctor_code: string | null }
+) {
+  if (!doc.doctor_code) {
+    await sendWhatsAppMessage(
+      phone,
+      'Your referral code is not generated yet. Please complete setup in the dashboard first.'
+    )
+    return
+  }
+  const referralLink = `https://drcliniq.in/join?ref=${doc.doctor_code}`
+  await sendWhatsAppMessage(
+    phone,
+    `💡 Invite another doctor to DrCliniq:\n\n` +
+    `Hey! I've been using DrCliniq to automate my WhatsApp clinic replies — saves me hours every week. Try it out:\n` +
+    `${referralLink}\n\n` +
+    `_Forward to a doctor friend._`
+  )
+}
+
 // ──────────────────────────────────────────────
 // HANDLER: Doctor signup via WhatsApp
 // ──────────────────────────────────────────────
@@ -271,7 +375,7 @@ async function handleDoctorSignup(phone: string, contactName: string | null, req
   if (existing.rows.length > 0) {
     const doc = existing.rows[0]
     if (doc.onboarding_complete) {
-      await sendWhatsAppMessage(phone, `Welcome back, ${formatDrName(doc.name || '')}. Reply with any message to receive your dashboard link.`)
+      await sendWhatsAppMessage(phone, `Welcome back, ${formatDrName(doc.name || '')}. Send any message to see your dashboard, share link, and referral options.`)
     } else {
       // Resume onboarding
       await resumeOnboarding(phone, doc)
