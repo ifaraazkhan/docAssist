@@ -12,7 +12,7 @@ export default function ReferPage() {
   const doctor = useDoctor();
 
   const referralCode = doctor.doctorCode;
-  const referralLink = `https://drcliniq.com/join?ref=${referralCode}`;
+  const referralLink = `https://drcliniq.in/join?ref=${referralCode}`;
 
   const handleCopy = async () => {
     try {
