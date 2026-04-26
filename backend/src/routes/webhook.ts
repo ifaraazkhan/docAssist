@@ -890,23 +890,60 @@ function formatTime(time: string): string {
 }
 
 // ──────────────────────────────────────────────
+// HELPER: IST-aware time helpers
+// Server may run in UTC; clinics operate in IST. All booking decisions
+// use these helpers so an OPD that ends 9pm IST never accepts a 10pm IST tap.
+// ──────────────────────────────────────────────
+const IST_OFFSET_MIN = 5 * 60 + 30
+const BOOKING_CUTOFF_MINUTES = 5 // refuse booking within last 5 minutes of session
+
+function nowIST(): Date {
+  return new Date(Date.now() + IST_OFFSET_MIN * 60 * 1000)
+}
+
+function todayStrIST(): string {
+  return nowIST().toISOString().split('T')[0]
+}
+
+function nowMinutesIST(): number {
+  const ist = nowIST()
+  return ist.getUTCHours() * 60 + ist.getUTCMinutes()
+}
+
+/** "21:00:00" or "21:00" → minutes since midnight */
+function timeToMinutes(t: string): number {
+  const [h, m] = t.substring(0, 5).split(':').map(Number)
+  return h * 60 + m
+}
+
+/** Is this session still bookable right now (today only)? */
+function isSessionBookableToday(session: { end_time: string }): boolean {
+  return timeToMinutes(session.end_time) - BOOKING_CUTOFF_MINUTES > nowMinutesIST()
+}
+
+// ──────────────────────────────────────────────
 // HELPER: Get next N available dates for OPD
+// For today, a session must still have time left (end_time minus cutoff > now).
 // ──────────────────────────────────────────────
 function getAvailableDates(
-  sessions: { days: string }[],
+  sessions: { days: string; end_time: string }[],
   count: number
 ): Date[] {
   const dates: Date[] = []
-  const d = new Date()
+  const base = nowIST()
+  const todayStr = todayStrIST()
   // Check up to 14 days ahead
   for (let i = 0; i < 14 && dates.length < count; i++) {
-    const check = new Date(d)
-    check.setDate(d.getDate() + i)
-    const dayIndex = (check.getDay() + 6) % 7 // 0=Mon
-    // Check if any session runs on this day
+    const check = new Date(base)
+    check.setUTCDate(base.getUTCDate() + i)
+    const dayIndex = (check.getUTCDay() + 6) % 7 // 0=Mon
+    const checkStr = check.toISOString().split('T')[0]
+    const isToday = checkStr === todayStr
     const hasSession = sessions.some((s) => {
       const days = s.days || '1111110'
-      return days[dayIndex] === '1'
+      if (days[dayIndex] !== '1') return false
+      if (isToday && !isSessionBookableToday(s)) return false
+      return true
     })
     if (hasSession) dates.push(check)
   }
@@ -937,7 +974,7 @@ async function handleAppointmentBooking(
   }
 
   // Get next 3 available dates
-  const availDates = getAvailableDates(sessionsResult.rows, 3)
+  const availDates = getAvailableDates(sessionsResult.rows as { days: string; end_time: string }[], 3)
 
   if (availDates.length === 0) {
     await sendWhatsAppMessage(phone, 'Sorry, no OPD sessions are available in the coming days.')
@@ -967,12 +1004,11 @@ async function handleAppointmentBooking(
     bookedMap[r.dt] = parseInt(r.cnt, 10)
   }
 
-  // Build day items
-  const today = new Date()
-  const todayStr = today.toISOString().split('T')[0]
-  const tomorrow = new Date(today)
-  tomorrow.setDate(today.getDate() + 1)
-  const tomorrowStr = tomorrow.toISOString().split('T')[0]
+  // Build day items (IST-aware)
+  const todayStr = todayStrIST()
+  const tomorrowDate = new Date(nowIST())
+  tomorrowDate.setUTCDate(tomorrowDate.getUTCDate() + 1)
+  const tomorrowStr = tomorrowDate.toISOString().split('T')[0]
 
   const dayItems = availDates.map((d) => {
     const ds = d.toISOString().split('T')[0]
@@ -1033,8 +1069,15 @@ async function handleAppointmentDaySelect(
     return
   }
 
+  // Reject past dates (e.g. stale button tap)
+  if (dateStr < todayStrIST()) {
+    await sendWhatsAppMessage(phone, 'That date has already passed. Please book again.')
+    return
+  }
+
   const bookingDate = new Date(dateStr + 'T00:00:00')
   const dayIndex = (bookingDate.getDay() + 6) % 7 // 0=Mon
+  const isToday = dateStr === todayStrIST()
 
   // Check if patient already has a booking for this date
   const existingBooking = await query(
@@ -1066,11 +1109,16 @@ async function handleAppointmentDaySelect(
 
   const daySessions = sessionsResult.rows.filter((s) => {
     const days = s.days || '1111110'
-    return days[dayIndex] === '1'
+    if (days[dayIndex] !== '1') return false
+    if (isToday && !isSessionBookableToday(s as { end_time: string })) return false
+    return true
   })
 
   if (daySessions.length === 0) {
-    await sendWhatsAppMessage(phone, 'No OPD sessions available on this day. Please choose another day.')
+    const msg = isToday
+      ? 'OPD has ended for today. Please choose another day.'
+      : 'No OPD sessions available on this day. Please choose another day.'
+    await sendWhatsAppMessage(phone, msg)
     return
   }
 
@@ -1126,11 +1174,10 @@ async function handleAppointmentDaySelect(
 
 /** Human label for a date: Today / Tomorrow / 28 Apr */
 function formatDayLabel(dateStr: string): string {
-  const today = new Date()
-  const todayStr = today.toISOString().split('T')[0]
-  const tomorrow = new Date(today)
-  tomorrow.setDate(today.getDate() + 1)
-  const tomorrowStr = tomorrow.toISOString().split('T')[0]
+  const todayStr = todayStrIST()
+  const tomorrowDate = new Date(nowIST())
+  tomorrowDate.setUTCDate(tomorrowDate.getUTCDate() + 1)
+  const tomorrowStr = tomorrowDate.toISOString().split('T')[0]
 
   if (dateStr === todayStr) return 'Today'
   if (dateStr === tomorrowStr) return 'Tomorrow'
@@ -1160,6 +1207,19 @@ async function handleAppointmentSessionSelect(
   }
 
   const session = sessionResult.rows[0]
+
+  // OPD-window guard: reject past dates and ended sessions for today
+  if (bookingDate < todayStrIST()) {
+    await sendWhatsAppMessage(phone, 'That date has already passed. Please book again.')
+    return
+  }
+  if (bookingDate === todayStrIST() && !isSessionBookableToday(session as { end_time: string })) {
+    await sendWhatsAppMessage(
+      phone,
+      `Sorry, *${session.name}* has ended for today. Please book for another day.`
+    )
+    return
+  }
 
   // Check if patient already has any booking for this date
   const existingBooking = await query(
