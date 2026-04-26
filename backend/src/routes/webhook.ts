@@ -36,6 +36,12 @@ const MENU_DASHBOARD = 'DR_MENU_DASHBOARD'
 const MENU_SHARE = 'DR_MENU_SHARE'
 const MENU_REFER = 'DR_MENU_REFER'
 
+// Patient global button IDs — handled at top of handleProtocolMatching
+const PT_MAIN_MENU = 'PT_MAIN_MENU'
+const PT_VIEW_DETAILS = 'PT_VIEW_DETAILS'
+const PT_VIEW_TOKEN = 'PT_VIEW_TOKEN'
+const PT_BOOK_APPT = 'PT_BOOK_APPT'
+
 // ──────────────────────────────────────────────
 // GET — Meta webhook verification
 // ──────────────────────────────────────────────
@@ -723,25 +729,14 @@ async function handleClinicCode(
     }
   })
 
-  // Send welcome + menu
-  const menuProtocols = await query(
-    `SELECT id, title FROM protocols
-     WHERE doctor_id = $1 AND is_active = true AND add_to_menu = true AND deleted_at IS NULL`,
-    [doctor.id]
-  )
-
+  // Send welcome + menu (custom greeting includes T&C acknowledgement)
   const termsUrl = `${process.env.APP_URL || 'https://drcliniq.in'}/terms`
-  const welcomeText = `Welcome to *${doctor.clinic_name || formatDrName(doctor.name || '')}*.\nHow can we help you today?\n\n_By continuing, you agree to our Terms & Privacy Policy: ${termsUrl}_`
+  const welcomeText =
+    `Welcome to *${doctor.clinic_name || formatDrName(doctor.name || '')}*.\n` +
+    `How can we help you today?\n\n` +
+    `_By continuing, you agree to our Terms & Privacy Policy: ${termsUrl}_`
 
-  if (menuProtocols.rows.length > 0) {
-    await sendWhatsAppMenu(
-      phone,
-      welcomeText,
-      menuProtocols.rows.map((p) => ({ id: p.id, title: p.title }))
-    )
-  } else {
-    await sendWhatsAppMessage(phone, welcomeText + '\n\nType your query and the doctor will respond shortly.')
-  }
+  await sendMainMenu(phone, doctor.id, welcomeText)
 
   console.log(`[webhook][${requestId}] patient ${phone} joined doctor ${doctor.id} via ${code}`)
 }
@@ -759,6 +754,43 @@ async function handleProtocolMatching(
 ) {
   const lowerText = text.toLowerCase().trim()
   const isGreeting = GREETINGS.includes(lowerText)
+
+  // ── Patient global navigation ──
+  if (text === PT_MAIN_MENU) {
+    await sendMainMenu(phone, doctorId)
+    return
+  }
+
+  if (text === PT_VIEW_TOKEN) {
+    await handleViewToken(phone, doctorId)
+    return
+  }
+
+  if (text === PT_VIEW_DETAILS) {
+    const reply = await renderClinicDetails(doctorId)
+    await sendReplyWithTail(phone, doctorId, reply)
+    await query(
+      `INSERT INTO messages (patient_phone, doctor_id, direction, sender, content, msg_type)
+       VALUES ($1, $2, 'outbound', 'bot', $3, 'text')`,
+      [phone, doctorId, reply]
+    )
+    return
+  }
+
+  if (text === PT_BOOK_APPT) {
+    const sys = await query(
+      `SELECT id FROM protocols
+       WHERE doctor_id = $1 AND protocol_type = 'system' AND title = 'Book Appointment' AND deleted_at IS NULL
+       LIMIT 1`,
+      [doctorId]
+    )
+    if (sys.rows.length > 0) {
+      await handleAppointmentBooking(phone, doctorId, sys.rows[0].id, requestId)
+    } else {
+      await sendReplyWithTail(phone, doctorId, 'Booking is not enabled for this clinic.', null)
+    }
+    return
+  }
 
   // ── Appointment day selection (interactive reply) ──
   if (text.startsWith('appt_day_')) {
@@ -787,24 +819,9 @@ async function handleProtocolMatching(
     return
   }
 
-  // Fetch menu protocols
-  const menuProtocols = await query(
-    `SELECT id, title FROM protocols
-     WHERE doctor_id = $1 AND is_active = true AND add_to_menu = true AND deleted_at IS NULL`,
-    [doctorId]
-  )
-
-  // Greeting → show menu
-  if (isGreeting && menuProtocols.rows.length > 0) {
-    const docResult = await query('SELECT name, clinic_name FROM doctors WHERE id = $1', [doctorId])
-    const doc = docResult.rows[0]
-
-    await sendWhatsAppMenu(
-      phone,
-      `Welcome to *${doc?.clinic_name ?? formatDrName(doc?.name ?? '')}*. How can we help you?`,
-      menuProtocols.rows.map((p) => ({ id: p.id, title: p.title }))
-    )
-
+  // Greeting → show main menu
+  if (isGreeting) {
+    await sendMainMenu(phone, doctorId)
     console.log(`[webhook][${requestId}] menu sent`)
     return
   }
@@ -835,59 +852,7 @@ async function handleProtocolMatching(
 
     // System "Clinic Details" protocol — build dynamically from doctor profile
     if (matched.protocol_type === 'system' && matched.title === 'Clinic Details') {
-      const docResult = await query(
-        `SELECT name, specialty, clinic_name, clinic_address, city,
-                clinic_phone, doctor_code, phone
-         FROM doctors WHERE id = $1`,
-        [doctorId]
-      )
-      const doc = docResult.rows[0]
-
-      const parts: string[] = []
-      if (doc.clinic_name) parts.push(`*${doc.clinic_name}*`)
-      if (doc.name) parts.push(`${formatDrName(doc.name)}${doc.specialty ? ' — ' + doc.specialty : ''}`)
-      if (doc.clinic_address || doc.city) {
-        const addr = [doc.clinic_address, doc.city].filter(Boolean).join(', ')
-        parts.push(`📍 ${addr}`)
-      }
-
-      // Derive timing from OPD sessions
-      const sessResult = await query(
-        `SELECT name, start_time, end_time, days FROM opd_sessions
-         WHERE doctor_id = $1 AND is_active = true ORDER BY start_time ASC`,
-        [doctorId]
-      )
-      if (sessResult.rows.length > 0) {
-        const dayNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
-        // Union of all active days across sessions
-        const unionDays = '0000000'.split('')
-        for (const s of sessResult.rows) {
-          const d = s.days || '1111110'
-          for (let i = 0; i < 7; i++) {
-            if (d[i] === '1') unionDays[i] = '1'
-          }
-        }
-        const openDays = dayNames.filter((_, i) => unionDays[i] === '1').join(', ')
-        // Show each OPD session
-        for (const s of sessResult.rows) {
-          parts.push(`⏰ ${s.name}: ${formatTime(s.start_time)}–${formatTime(s.end_time)}`)
-        }
-        parts.push(`📅 ${openDays}`)
-      }
-
-      if (doc.clinic_phone) parts.push(`📞 ${doc.clinic_phone}`)
-
-      // Add shareable link
-      const waPhone = process.env.WHATSAPP_BUSINESS_PHONE || doc.phone
-      if (doc.doctor_code) {
-        const clinicLabel = doc.clinic_name || formatDrName(doc.name || '')
-        const shareLink = `https://wa.me/${waPhone}?text=${encodeURIComponent('Hi! Clinic code: ' + doc.doctor_code)}`
-        parts.push('')
-        parts.push(`_Connect with ${clinicLabel} via WhatsApp_ 👇`)
-        parts.push(shareLink)
-      }
-
-      reply = parts.join('\n')
+      reply = await renderClinicDetails(doctorId)
     } else {
       // Regular protocol reply
       reply = matched.reply_text
@@ -896,7 +861,7 @@ async function handleProtocolMatching(
       }
     }
 
-    await sendWhatsAppMessage(phone, reply)
+    await sendReplyWithTail(phone, doctorId, reply)
 
     // Save bot response
     await query(
@@ -911,7 +876,11 @@ async function handleProtocolMatching(
     console.log(`[webhook][${requestId}] protocol matched: ${matched.title}`)
   } else {
     // No match — notify doctor will respond
-    await sendWhatsAppMessage(phone, 'Your message has been noted. The doctor will respond shortly.')
+    await sendReplyWithTail(
+      phone,
+      doctorId,
+      'Your message has been noted. The doctor will respond shortly.'
+    )
 
     // Mark urgent + increment unread
     await query(
@@ -963,6 +932,167 @@ function timeToMinutes(t: string): number {
 /** Is this session still bookable right now (today only)? */
 function isSessionBookableToday(session: { end_time: string }): boolean {
   return timeToMinutes(session.end_time) - BOOKING_CUTOFF_MINUTES > nowMinutesIST()
+}
+
+// ──────────────────────────────────────────────
+// PATIENT TAIL HELPERS
+// Every dead-end reply ends with [Primary CTA] [Main Menu] so the patient
+// never has to type "hi" again to summon the menu. The CTA is state-aware:
+// active booking → "View My Token"; otherwise → "Book Appointment".
+// ──────────────────────────────────────────────
+async function pickPrimaryCta(
+  phone: string,
+  doctorId: string
+): Promise<{ id: string; title: string }> {
+  const active = await query(
+    `SELECT 1 FROM appointments
+     WHERE patient_phone = $1 AND doctor_id = $2
+       AND appointment_date >= CURRENT_DATE AND status = 'booked'
+     LIMIT 1`,
+    [phone, doctorId]
+  )
+  if (active.rows.length > 0) return { id: PT_VIEW_TOKEN, title: 'View My Token' }
+  return { id: PT_BOOK_APPT, title: 'Book Appointment' }
+}
+
+/**
+ * Send a text reply with a 2-button tail [Primary CTA] [Main Menu].
+ * If `customCta` is null, only the Main Menu button is shown.
+ */
+async function sendReplyWithTail(
+  phone: string,
+  doctorId: string,
+  body: string,
+  customCta?: { id: string; title: string } | null
+) {
+  const cta = customCta === undefined ? await pickPrimaryCta(phone, doctorId) : customCta
+  const buttons = cta
+    ? [
+        { id: cta.id, title: cta.title.substring(0, 20) },
+        { id: PT_MAIN_MENU, title: 'Main Menu' },
+      ]
+    : [{ id: PT_MAIN_MENU, title: 'Main Menu' }]
+  await sendWhatsAppButtons(phone, body, buttons)
+}
+
+/**
+ * Render the Clinic Details system protocol body. Extracted so the
+ * VIEW_DETAILS handler and the regular keyword/menu path share rendering.
+ */
+async function renderClinicDetails(doctorId: string): Promise<string> {
+  const docResult = await query(
+    `SELECT name, specialty, clinic_name, clinic_address, city,
+            clinic_phone, doctor_code, phone
+     FROM doctors WHERE id = $1`,
+    [doctorId]
+  )
+  const doc = docResult.rows[0]
+
+  const parts: string[] = []
+  if (doc.clinic_name) parts.push(`*${doc.clinic_name}*`)
+  if (doc.name) parts.push(`${formatDrName(doc.name)}${doc.specialty ? ' — ' + doc.specialty : ''}`)
+  if (doc.clinic_address || doc.city) {
+    const addr = [doc.clinic_address, doc.city].filter(Boolean).join(', ')
+    parts.push(`📍 ${addr}`)
+  }
+
+  const sessResult = await query(
+    `SELECT name, start_time, end_time, days FROM opd_sessions
+     WHERE doctor_id = $1 AND is_active = true ORDER BY start_time ASC`,
+    [doctorId]
+  )
+  if (sessResult.rows.length > 0) {
+    const dayNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+    const unionDays = '0000000'.split('')
+    for (const s of sessResult.rows) {
+      const d = s.days || '1111110'
+      for (let i = 0; i < 7; i++) {
+        if (d[i] === '1') unionDays[i] = '1'
+      }
+    }
+    const openDays = dayNames.filter((_, i) => unionDays[i] === '1').join(', ')
+    for (const s of sessResult.rows) {
+      parts.push(`⏰ ${s.name}: ${formatTime(s.start_time)}–${formatTime(s.end_time)}`)
+    }
+    parts.push(`📅 ${openDays}`)
+  }
+
+  if (doc.clinic_phone) parts.push(`📞 ${doc.clinic_phone}`)
+
+  const waPhone = process.env.WHATSAPP_BUSINESS_PHONE || doc.phone
+  if (doc.doctor_code) {
+    const clinicLabel = doc.clinic_name || formatDrName(doc.name || '')
+    const shareLink = `https://wa.me/${waPhone}?text=${encodeURIComponent('Hi! Clinic code: ' + doc.doctor_code)}`
+    parts.push('')
+    parts.push(`_Connect with ${clinicLabel} via WhatsApp_ 👇`)
+    parts.push(shareLink)
+  }
+
+  return parts.join('\n')
+}
+
+/**
+ * Send the main menu list message (greeting + up to 10 menu protocols).
+ * Used both on first clinic-code join and on every greeting / Main Menu tap.
+ * Pagination for >10 protocols comes in a follow-up commit.
+ */
+async function sendMainMenu(phone: string, doctorId: string, customGreeting?: string) {
+  const docResult = await query('SELECT name, clinic_name FROM doctors WHERE id = $1', [doctorId])
+  const doc = docResult.rows[0]
+  const clinicLabel = doc?.clinic_name ?? formatDrName(doc?.name ?? '')
+
+  const menuProtocols = await query(
+    `SELECT id, title FROM protocols
+     WHERE doctor_id = $1 AND is_active = true AND add_to_menu = true AND deleted_at IS NULL
+     ORDER BY usage_count DESC, created_at ASC`,
+    [doctorId]
+  )
+
+  const greeting = customGreeting ?? `Welcome to *${clinicLabel}*. How can we help you?`
+
+  if (menuProtocols.rows.length === 0) {
+    await sendWhatsAppMessage(
+      phone,
+      greeting + '\n\nType your query and the doctor will respond shortly.'
+    )
+    return
+  }
+
+  // Cap at WhatsApp's 10-row list limit (pagination in follow-up commit)
+  const items = menuProtocols.rows
+    .slice(0, 10)
+    .map((p) => ({ id: p.id, title: p.title }))
+  await sendWhatsAppMenu(phone, greeting, items)
+}
+
+/**
+ * Show the patient's current active booking (token + session + day).
+ * Triggered by VIEW_TOKEN button or after a booking is created.
+ */
+async function handleViewToken(phone: string, doctorId: string) {
+  const bookingResult = await query(
+    `SELECT a.token_number, a.appointment_date, s.name AS session_name,
+            s.start_time, s.end_time
+     FROM appointments a
+     JOIN opd_sessions s ON s.id = a.session_id
+     WHERE a.patient_phone = $1 AND a.doctor_id = $2
+       AND a.appointment_date >= CURRENT_DATE AND a.status = 'booked'
+     ORDER BY a.appointment_date ASC LIMIT 1`,
+    [phone, doctorId]
+  )
+  if (bookingResult.rows.length === 0) {
+    await sendReplyWithTail(phone, doctorId, 'You have no active bookings.')
+    return
+  }
+  const b = bookingResult.rows[0]
+  const dayLabel = formatDayLabel(b.appointment_date.toISOString().split('T')[0])
+  const sessionTime = `${formatTime(b.start_time)}–${formatTime(b.end_time)}`
+  const reply =
+    `🎫 *Token #${b.token_number}*\n` +
+    `📋 ${b.session_name}\n` +
+    `📅 ${dayLabel} · ${sessionTime}\n\n` +
+    `_Reply "cancel" to cancel this booking._`
+  await sendReplyWithTail(phone, doctorId, reply, null) // no primary CTA — patient is already viewing
 }
 
 // ──────────────────────────────────────────────
@@ -1295,9 +1425,11 @@ async function handleAppointmentSessionSelect(
     )
     const currentCount = parseInt(dailyCount.rows[0].cnt, 10)
     if (currentCount >= 10) {
-      await sendWhatsAppMessage(
+      await sendReplyWithTail(
         phone,
-        'Sorry, all appointment slots are full for this day. Please contact the clinic directly or try another day.'
+        doctorId,
+        "Today's queue is full. Please try tomorrow or contact the clinic directly.",
+        null
       )
 
       // Alert doctor about missed booking (save as system message)
@@ -1355,9 +1487,15 @@ async function handleAppointmentSessionSelect(
     `📅 ${dayLabel} · ${sessionTime}\n` +
     `🔢 Token: *#${tokenNumber}*\n` +
     `${waitText}\n\n` +
-    `To cancel, reply "cancel"`
+    `_Reply "cancel" to cancel this booking._`
 
-  await sendWhatsAppMessage(phone, reply)
+  // Tail: View My Token (most likely next intent right after booking) + Main Menu
+  await sendReplyWithTail(
+    phone,
+    doctorId,
+    reply,
+    { id: PT_VIEW_TOKEN, title: 'View My Token' }
+  )
 
   // Save bot response
   await query(
