@@ -11,7 +11,25 @@ const router = Router()
 
 const GREETINGS = ['hi', 'hello', 'hey', 'helo', 'menu', 'help', 'start', 'namaste', 'namaskar']
 const CANCEL_KEYWORDS = ['cancel appointment', 'cancel token', 'cancel booking', 'cancel opd', 'cancel']
+const STOP_KEYWORDS = ['stop', 'unsubscribe', 'leave', 'opt out', 'optout']
 const DOCTOR_SIGNUP_CODE = 'DOCTOR_SIGNUP'
+
+/**
+ * Word-boundary keyword match. `lowerText.includes(kw)` was matching
+ * "I might cancel my plans" → triggered cancel flow. We need word-aware
+ * matching that still works for multi-word keywords like "cancel booking".
+ */
+function escapeRegex(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+function keywordMatches(lowerText: string, keyword: string): boolean {
+  const kw = keyword.toLowerCase().trim()
+  if (!kw) return false
+  // \b doesn't work well for non-ASCII; this regex requires the keyword
+  // to sit between non-word chars or string boundaries.
+  const re = new RegExp(`(^|[^a-z0-9])${escapeRegex(kw)}([^a-z0-9]|$)`, 'i')
+  return re.test(lowerText)
+}
 
 // Doctor menu button IDs (sent when an onboarded doctor messages the bot)
 const MENU_DASHBOARD = 'DR_MENU_DASHBOARD'
@@ -220,6 +238,32 @@ router.post('/', webhookVerify, async (req: Request, res: Response) => {
          VALUES ($1, $2, $3, 'inbound', 'patient', $4, $5, $6)`,
         [wamid, from, targetDoctorId, displayText, msgType === 'interactive' ? 'interactive' : 'text', waTimestamp]
       )
+
+      // STOP keyword: opt patient out of this clinic
+      // Only fires for plain text (not interactive button taps that happen to contain "stop")
+      const lowerInbound = trimmedText.toLowerCase()
+      if (msgType === 'text' && STOP_KEYWORDS.some((kw) => keywordMatches(lowerInbound, kw))) {
+        await query(
+          `UPDATE patient_doctor_mappings SET status = 'opted_out'
+           WHERE id = $1`,
+          [mappingId]
+        )
+        const doc = mappings.rows.find((r) => r.doctor_id === targetDoctorId)
+        const clinicLabel = doc?.clinic_name || 'this clinic'
+        const reply =
+          `You've been unsubscribed from *${clinicLabel}*.\n\n` +
+          `You will no longer receive replies here.\n\n` +
+          `_To rejoin, share the clinic code again._`
+        await sendWhatsAppMessage(from, reply)
+        await query(
+          `INSERT INTO messages (patient_phone, doctor_id, direction, sender, content, msg_type)
+           VALUES ($1, $2, 'outbound', 'bot', $3, 'text')`,
+          [from, targetDoctorId, reply]
+        )
+        console.log(`[webhook][${requestId}] patient ${from} opted out of doctor ${targetDoctorId}`)
+        res.status(200).send('OK')
+        return
+      }
 
       // Protocol matching
       await handleProtocolMatching(from, text, targetDoctorId, mappingId, wamid, requestId)
@@ -738,7 +782,7 @@ async function handleProtocolMatching(
   }
 
   // ── Cancel appointment ──
-  if (CANCEL_KEYWORDS.some((kw) => lowerText.includes(kw))) {
+  if (CANCEL_KEYWORDS.some((kw) => keywordMatches(lowerText, kw))) {
     await handleAppointmentCancel(phone, doctorId, requestId)
     return
   }
@@ -776,7 +820,7 @@ async function handleProtocolMatching(
 
   if (!matched) {
     matched = allProtocols.rows.find((p) =>
-      p.keywords.some((kw: string) => lowerText.includes(kw.toLowerCase()))
+      p.keywords.some((kw: string) => keywordMatches(lowerText, kw))
     )
   }
 
