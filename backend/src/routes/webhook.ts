@@ -792,6 +792,35 @@ async function handleProtocolMatching(
     return
   }
 
+  // ── Cancel / reschedule routing (interactive reply IDs) ──
+  if (text.startsWith('CANCEL_ASK_')) {
+    await handleCancelAsk(phone, doctorId, text.replace('CANCEL_ASK_', ''), requestId)
+    return
+  }
+  if (text.startsWith('CANCEL_CONFIRM_')) {
+    await handleCancelConfirm(phone, doctorId, text.replace('CANCEL_CONFIRM_', ''), requestId)
+    return
+  }
+  if (text === 'CANCEL_ABORT') {
+    await handleCancelAbort(phone, doctorId)
+    return
+  }
+  if (text.startsWith('CANCEL_REASON_')) {
+    // Format: CANCEL_REASON_<apptId>_<reason>
+    const payload = text.replace('CANCEL_REASON_', '')
+    const lastUnderscore = payload.lastIndexOf('_')
+    if (lastUnderscore > 0) {
+      const apptId = payload.substring(0, lastUnderscore)
+      const reason = payload.substring(lastUnderscore + 1)
+      await handleCancelReason(phone, doctorId, apptId, reason, requestId)
+    }
+    return
+  }
+  if (text.startsWith('RESCHEDULE_')) {
+    await handleReschedule(phone, doctorId, text.replace('RESCHEDULE_', ''), requestId)
+    return
+  }
+
   // ── Appointment day selection (interactive reply) ──
   if (text.startsWith('appt_day_')) {
     const dateStr = text.replace('appt_day_', '')
@@ -1131,8 +1160,44 @@ async function handleAppointmentBooking(
   phone: string,
   doctorId: string,
   protocolId: string,
-  requestId: string
+  requestId: string,
+  opts: { skipExistingCheck?: boolean } = {}
 ) {
+  // ── One-booking-max guard ──
+  // If patient already has an active future booking with this doctor, show a
+  // Reschedule / Cancel card instead of letting them create a second booking.
+  // Skipped when called from the Reschedule path (old booking already cancelled).
+  if (!opts.skipExistingCheck) {
+    const existing = await query(
+      `SELECT a.id, a.token_number, a.appointment_date, s.name AS session_name,
+              s.start_time, s.end_time
+       FROM appointments a
+       JOIN opd_sessions s ON s.id = a.session_id
+       WHERE a.patient_phone = $1 AND a.doctor_id = $2
+         AND a.appointment_date >= CURRENT_DATE AND a.status = 'booked'
+       ORDER BY a.appointment_date ASC LIMIT 1`,
+      [phone, doctorId]
+    )
+    if (existing.rows.length > 0) {
+      const b = existing.rows[0]
+      const dayLabel = formatDayLabel(b.appointment_date.toISOString().split('T')[0])
+      const timeRange = `${formatTime(b.start_time)}–${formatTime(b.end_time)}`
+      const body =
+        `You already have an active booking:\n\n` +
+        `🎫 *Token #${b.token_number}*\n` +
+        `📋 ${b.session_name}\n` +
+        `📅 ${dayLabel} · ${timeRange}\n\n` +
+        `_Only one active booking is allowed at a time._`
+      await sendWhatsAppButtons(phone, body, [
+        { id: `RESCHEDULE_${b.id}`, title: 'Reschedule' },
+        { id: `CANCEL_ASK_${b.id}`, title: 'Cancel booking' },
+        { id: PT_MAIN_MENU, title: 'Main Menu' },
+      ])
+      console.log(`[webhook][${requestId}] booking blocked — patient ${phone} has active token #${b.token_number}`)
+      return
+    }
+  }
+
   // Get active sessions
   const sessionsResult = await query(
     `SELECT id, name, start_time, end_time, days, avg_minutes
@@ -1253,21 +1318,27 @@ async function handleAppointmentDaySelect(
   const dayIndex = (bookingDate.getDay() + 6) % 7 // 0=Mon
   const isToday = dateStr === todayStrIST()
 
-  // Check if patient already has a booking for this date
+  // Check if patient already has any active future booking (one-booking-max)
   const existingBooking = await query(
-    `SELECT a.id, a.token_number, s.name AS session_name FROM appointments a
+    `SELECT a.id, a.token_number, a.appointment_date, s.name AS session_name FROM appointments a
      JOIN opd_sessions s ON s.id = a.session_id
-     WHERE a.patient_phone = $1 AND a.doctor_id = $2 AND a.appointment_date = $3 AND a.status = 'booked'`,
-    [phone, doctorId, dateStr]
+     WHERE a.patient_phone = $1 AND a.doctor_id = $2
+       AND a.appointment_date >= CURRENT_DATE AND a.status = 'booked'
+     ORDER BY a.appointment_date ASC LIMIT 1`,
+    [phone, doctorId]
   )
 
   if (existingBooking.rows.length > 0) {
-    const t = existingBooking.rows[0].token_number
-    const sn = existingBooking.rows[0].session_name
-    const dayLabel = formatDayLabel(dateStr)
-    await sendWhatsAppMessage(
+    const b = existingBooking.rows[0]
+    const dayLabel = formatDayLabel(b.appointment_date.toISOString().split('T')[0])
+    await sendWhatsAppButtons(
       phone,
-      `You already have *Token #${t}* for ${sn} on ${dayLabel}.\n\nTo cancel, reply "cancel".`
+      `You already have *Token #${b.token_number}* for ${b.session_name} on ${dayLabel}.\n\n_Only one active booking is allowed at a time._`,
+      [
+        { id: `RESCHEDULE_${b.id}`, title: 'Reschedule' },
+        { id: `CANCEL_ASK_${b.id}`, title: 'Cancel booking' },
+        { id: PT_MAIN_MENU, title: 'Main Menu' },
+      ]
     )
     return
   }
@@ -1395,20 +1466,27 @@ async function handleAppointmentSessionSelect(
     return
   }
 
-  // Check if patient already has any booking for this date
+  // Check if patient already has any active future booking (one-booking-max)
   const existingBooking = await query(
-    `SELECT a.id, a.token_number, s.name AS session_name FROM appointments a
+    `SELECT a.id, a.token_number, a.appointment_date, s.name AS session_name FROM appointments a
      JOIN opd_sessions s ON s.id = a.session_id
-     WHERE a.patient_phone = $1 AND a.doctor_id = $2 AND a.appointment_date = $3 AND a.status = 'booked'`,
-    [phone, doctorId, bookingDate]
+     WHERE a.patient_phone = $1 AND a.doctor_id = $2
+       AND a.appointment_date >= CURRENT_DATE AND a.status = 'booked'
+     ORDER BY a.appointment_date ASC LIMIT 1`,
+    [phone, doctorId]
   )
 
   if (existingBooking.rows.length > 0) {
-    const t = existingBooking.rows[0].token_number
-    const sn = existingBooking.rows[0].session_name
-    await sendWhatsAppMessage(
+    const b = existingBooking.rows[0]
+    const dayLabel = formatDayLabel(b.appointment_date.toISOString().split('T')[0])
+    await sendWhatsAppButtons(
       phone,
-      `You already have *Token #${t}* for ${sn} on ${formatDayLabel(bookingDate)}.\n\nTo cancel, reply "cancel".`
+      `You already have *Token #${b.token_number}* for ${b.session_name} on ${dayLabel}.\n\n_Only one active booking is allowed at a time._`,
+      [
+        { id: `RESCHEDULE_${b.id}`, title: 'Reschedule' },
+        { id: `CANCEL_ASK_${b.id}`, title: 'Cancel booking' },
+        { id: PT_MAIN_MENU, title: 'Main Menu' },
+      ]
     )
     return
   }
@@ -1508,18 +1586,20 @@ async function handleAppointmentSessionSelect(
 }
 
 // ──────────────────────────────────────────────
-// HANDLER: Cancel appointment
+// CANCEL FLOW
+// Two-step: Ask → Confirm → (optional Reason). The patient typing "cancel"
+// or tapping "Cancel booking" anywhere goes through ASK first; cancellation
+// only happens after explicit Yes confirmation.
 // ──────────────────────────────────────────────
+
+/** Step 1 — keyword "cancel" entry: find their booking and route to ASK */
 async function handleAppointmentCancel(
   phone: string,
   doctorId: string,
   requestId: string
 ) {
-  // Find latest active booking (today or future)
   const booking = await query(
-    `SELECT a.id, a.token_number, a.appointment_date, s.name AS session_name
-     FROM appointments a
-     JOIN opd_sessions s ON s.id = a.session_id
+    `SELECT a.id FROM appointments a
      WHERE a.patient_phone = $1 AND a.doctor_id = $2
        AND a.appointment_date >= CURRENT_DATE AND a.status = 'booked'
      ORDER BY a.appointment_date ASC, a.created_at DESC LIMIT 1`,
@@ -1527,25 +1607,162 @@ async function handleAppointmentCancel(
   )
 
   if (booking.rows.length === 0) {
-    await sendWhatsAppMessage(phone, 'You don\'t have any upcoming appointments to cancel.')
+    await sendReplyWithTail(
+      phone,
+      doctorId,
+      "You don't have any upcoming appointments to cancel."
+    )
     return
   }
 
-  const b = booking.rows[0]
-  await query('UPDATE appointments SET status = $1 WHERE id = $2', ['cancelled', b.id])
+  await handleCancelAsk(phone, doctorId, booking.rows[0].id, requestId)
+}
 
+/** Step 2 — show confirm card with [Yes, cancel] [No, keep it] */
+async function handleCancelAsk(
+  phone: string,
+  doctorId: string,
+  apptId: string,
+  requestId: string
+) {
+  const result = await query(
+    `SELECT a.id, a.token_number, a.appointment_date, a.status,
+            s.name AS session_name, s.start_time, s.end_time
+     FROM appointments a
+     JOIN opd_sessions s ON s.id = a.session_id
+     WHERE a.id = $1 AND a.patient_phone = $2 AND a.doctor_id = $3`,
+    [apptId, phone, doctorId]
+  )
+  if (result.rows.length === 0 || result.rows[0].status !== 'booked') {
+    await sendReplyWithTail(phone, doctorId, 'This booking is no longer active.')
+    return
+  }
+  const b = result.rows[0]
   const dayLabel = formatDayLabel(b.appointment_date.toISOString().split('T')[0])
-  const reply = `Your appointment (Token #${b.token_number}, ${b.session_name}, ${dayLabel}) has been cancelled.`
-  await sendWhatsAppMessage(phone, reply)
+  const timeRange = `${formatTime(b.start_time)}–${formatTime(b.end_time)}`
+  const body =
+    `Cancel this booking?\n\n` +
+    `🎫 *Token #${b.token_number}*\n` +
+    `📋 ${b.session_name}\n` +
+    `📅 ${dayLabel} · ${timeRange}\n\n` +
+    `_This can't be undone._`
+  await sendWhatsAppButtons(phone, body, [
+    { id: `CANCEL_CONFIRM_${b.id}`, title: 'Yes, cancel' },
+    { id: 'CANCEL_ABORT', title: 'No, keep it' },
+  ])
+  console.log(`[webhook][${requestId}] cancel confirm shown for token #${b.token_number}`)
+}
 
-  // Save bot response
+/** Step 3 — execute cancel + ask reason */
+async function handleCancelConfirm(
+  phone: string,
+  doctorId: string,
+  apptId: string,
+  requestId: string
+) {
+  const result = await query(
+    `UPDATE appointments
+     SET status = 'cancelled', cancelled_at = now()
+     WHERE id = $1 AND patient_phone = $2 AND doctor_id = $3 AND status = 'booked'
+     RETURNING token_number, appointment_date, session_id`,
+    [apptId, phone, doctorId]
+  )
+
+  if (result.rows.length === 0) {
+    await sendReplyWithTail(phone, doctorId, 'This booking is no longer active.')
+    return
+  }
+
+  const tokenNumber = result.rows[0].token_number
+  const sessionResult = await query(
+    'SELECT name FROM opd_sessions WHERE id = $1',
+    [result.rows[0].session_id]
+  )
+  const sessionName = sessionResult.rows[0]?.name ?? 'Appointment'
+  const dayLabel = formatDayLabel(result.rows[0].appointment_date.toISOString().split('T')[0])
+
+  // Cancellation confirmation + optional reason buttons
+  const body =
+    `✅ *Token #${tokenNumber}* (${sessionName}, ${dayLabel}) has been cancelled.\n\n` +
+    `_Optional: tell us why so the doctor knows._`
+  await sendWhatsAppButtons(phone, body, [
+    { id: `CANCEL_REASON_${apptId}_better`, title: 'Got better' },
+    { id: `CANCEL_REASON_${apptId}_clash`, title: 'Schedule clash' },
+    { id: `CANCEL_REASON_${apptId}_other`, title: 'Other reason' },
+  ])
+
   await query(
     `INSERT INTO messages (patient_phone, doctor_id, direction, sender, content, msg_type)
      VALUES ($1, $2, 'outbound', 'bot', $3, 'text')`,
-    [phone, doctorId, reply]
+    [phone, doctorId, body]
   )
 
-  console.log(`[webhook][${requestId}] appointment cancelled: token #${b.token_number}`)
+  console.log(`[webhook][${requestId}] appointment cancelled: token #${tokenNumber}`)
+}
+
+/** Step 4 (optional) — save reason + close loop with tail */
+async function handleCancelReason(
+  phone: string,
+  doctorId: string,
+  apptId: string,
+  reason: string,
+  requestId: string
+) {
+  await query(
+    `UPDATE appointments SET cancellation_reason = $1
+     WHERE id = $2 AND patient_phone = $3 AND doctor_id = $4`,
+    [reason, apptId, phone, doctorId]
+  )
+  await sendReplyWithTail(
+    phone,
+    doctorId,
+    'Thanks for letting us know. Hope to see you again soon.',
+    { id: PT_BOOK_APPT, title: 'Book Again' }
+  )
+  console.log(`[webhook][${requestId}] cancel reason saved: ${reason}`)
+}
+
+/** Cancel-abort — user chose "No, keep it" */
+async function handleCancelAbort(phone: string, doctorId: string) {
+  await sendReplyWithTail(
+    phone,
+    doctorId,
+    'Booking kept. Your token is still active.',
+    { id: PT_VIEW_TOKEN, title: 'View My Token' }
+  )
+}
+
+// ──────────────────────────────────────────────
+// RESCHEDULE — atomic cancel old (reason='rescheduled') + show day picker
+// ──────────────────────────────────────────────
+async function handleReschedule(
+  phone: string,
+  doctorId: string,
+  apptId: string,
+  requestId: string
+) {
+  const result = await query(
+    `UPDATE appointments
+     SET status = 'cancelled', cancelled_at = now(), cancellation_reason = 'rescheduled'
+     WHERE id = $1 AND patient_phone = $2 AND doctor_id = $3 AND status = 'booked'
+     RETURNING token_number`,
+    [apptId, phone, doctorId]
+  )
+  if (result.rows.length === 0) {
+    await sendReplyWithTail(phone, doctorId, 'That booking is no longer active.')
+    return
+  }
+  console.log(`[webhook][${requestId}] rescheduling — old token #${result.rows[0].token_number} cancelled`)
+
+  // Find Book Appointment system protocol id
+  const sys = await query(
+    `SELECT id FROM protocols
+     WHERE doctor_id = $1 AND protocol_type = 'system' AND title = 'Book Appointment' AND deleted_at IS NULL
+     LIMIT 1`,
+    [doctorId]
+  )
+  const protocolId = sys.rows[0]?.id ?? apptId // fallback so usage_count update doesn't crash
+  await handleAppointmentBooking(phone, doctorId, protocolId, requestId, { skipExistingCheck: true })
 }
 
 export default router
