@@ -229,6 +229,15 @@ router.post('/', webhookVerify, async (req: Request, res: Response) => {
         }
       }
 
+      // Passive name backfill: if patient never set a WhatsApp profile name when
+      // they joined and has set one since, capture it for the doctor's inbox.
+      if (contactName) {
+        await query(
+          'UPDATE patients SET name = $1 WHERE phone = $2 AND name IS NULL',
+          [contactName, from]
+        )
+      }
+
       // Update/create wa_session (24hr window)
       // No unique constraint on (patient_phone, doctor_id) — just insert new row each time
       // We always query ORDER BY last_msg_at DESC LIMIT 1 so latest wins
@@ -736,7 +745,7 @@ async function handleClinicCode(
     `How can we help you today?\n\n` +
     `_By continuing, you agree to our Terms & Privacy Policy: ${termsUrl}_`
 
-  await sendMainMenu(phone, doctor.id, welcomeText)
+  await sendMainMenu(phone, doctor.id, 1, welcomeText)
 
   console.log(`[webhook][${requestId}] patient ${phone} joined doctor ${doctor.id} via ${code}`)
 }
@@ -758,6 +767,12 @@ async function handleProtocolMatching(
   // ── Patient global navigation ──
   if (text === PT_MAIN_MENU) {
     await sendMainMenu(phone, doctorId)
+    return
+  }
+
+  if (text.startsWith('MENU_PAGE_')) {
+    const page = parseInt(text.replace('MENU_PAGE_', ''), 10)
+    if (page > 0) await sendMainMenu(phone, doctorId, page)
     return
   }
 
@@ -1065,21 +1080,63 @@ async function renderClinicDetails(doctorId: string): Promise<string> {
  * Used both on first clinic-code join and on every greeting / Main Menu tap.
  * Pagination for >10 protocols comes in a follow-up commit.
  */
-async function sendMainMenu(phone: string, doctorId: string, customGreeting?: string) {
+// Menu pagination — WhatsApp list messages are capped at 10 rows.
+// Page 1: 2 pinned (View Details + Book Appointment) + up to 7 protocols + 1 "More" row = 10
+// Pages 2+: up to 9 protocols + 1 "More" row = 10
+const MENU_PAGE1_PROTOCOLS = 7
+const MENU_PAGE_N_PROTOCOLS = 9
+
+async function sendMainMenu(
+  phone: string,
+  doctorId: string,
+  page = 1,
+  customGreeting?: string
+) {
   const docResult = await query('SELECT name, clinic_name FROM doctors WHERE id = $1', [doctorId])
   const doc = docResult.rows[0]
   const clinicLabel = doc?.clinic_name ?? formatDrName(doc?.name ?? '')
 
+  // Doctor-configured menu protocols (system protocols are pinned separately)
   const menuProtocols = await query(
     `SELECT id, title FROM protocols
      WHERE doctor_id = $1 AND is_active = true AND add_to_menu = true AND deleted_at IS NULL
+       AND protocol_type != 'system'
      ORDER BY usage_count DESC, created_at ASC`,
     [doctorId]
   )
 
   const greeting = customGreeting ?? `Welcome to *${clinicLabel}*. How can we help you?`
 
-  if (menuProtocols.rows.length === 0) {
+  const safePage = Math.max(1, Math.floor(page))
+  let items: { id: string; title: string }[] = []
+  let cursor = 0
+
+  if (safePage === 1) {
+    // Pinned: View Details + Book Appointment always at top of page 1
+    items.push(
+      { id: PT_VIEW_DETAILS, title: 'View Details' },
+      { id: PT_BOOK_APPT, title: 'Book Appointment' }
+    )
+    const slice = menuProtocols.rows.slice(0, MENU_PAGE1_PROTOCOLS)
+    for (const p of slice) items.push({ id: p.id, title: p.title.substring(0, 24) })
+    cursor = slice.length
+  } else {
+    const start = MENU_PAGE1_PROTOCOLS + (safePage - 2) * MENU_PAGE_N_PROTOCOLS
+    const slice = menuProtocols.rows.slice(start, start + MENU_PAGE_N_PROTOCOLS)
+    for (const p of slice) items.push({ id: p.id, title: p.title.substring(0, 24) })
+    cursor = start + slice.length
+  }
+
+  // "More options →" if more protocols remain
+  if (cursor < menuProtocols.rows.length) {
+    items.push({ id: `MENU_PAGE_${safePage + 1}`, title: 'More options →' })
+  }
+  // On page 2+, also offer "← Back to top" if no more (so patient isn't stuck deep)
+  if (safePage > 1 && cursor >= menuProtocols.rows.length && items.length < 10) {
+    items.push({ id: 'MENU_PAGE_1', title: '← Back to top' })
+  }
+
+  if (items.length === 0) {
     await sendWhatsAppMessage(
       phone,
       greeting + '\n\nType your query and the doctor will respond shortly.'
@@ -1087,10 +1144,6 @@ async function sendMainMenu(phone: string, doctorId: string, customGreeting?: st
     return
   }
 
-  // Cap at WhatsApp's 10-row list limit (pagination in follow-up commit)
-  const items = menuProtocols.rows
-    .slice(0, 10)
-    .map((p) => ({ id: p.id, title: p.title }))
   await sendWhatsAppMenu(phone, greeting, items)
 }
 
