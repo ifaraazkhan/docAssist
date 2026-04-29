@@ -8,12 +8,12 @@ const router = Router()
 // ──────────────────────────────────────────────
 router.get('/', async (_req: Request, res: Response, next: NextFunction) => {
   try {
-    const result = await query(
+    const result = await query<{ name: string }>(
       `SELECT name FROM specialties WHERE is_active = true ORDER BY sort_order ASC`
     )
     res.json({
       success: true,
-      specialties: result.rows.map((r: { name: string }) => r.name),
+      specialties: result.rows.map((r) => r.name),
     })
   } catch (err) {
     next(err)

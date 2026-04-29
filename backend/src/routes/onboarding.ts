@@ -3,6 +3,8 @@ import { query, withTransaction } from '../lib/db'
 import { requireAuth, AuthenticatedRequest } from '../middleware/auth'
 import { BadRequest, Forbidden, NotFound } from '../lib/errors'
 import { generateDoctorCode, generateSlug } from '../lib/clinic-code'
+import { sendWelcomeCardToDoctor } from '../lib/welcomeCard'
+import { renderWelcomeCard } from '../lib/imageCard'
 
 const router = Router()
 
@@ -213,6 +215,53 @@ router.post('/select-protocols', requireAuth, async (req: Request, res: Response
       doctorCode: doc.doctor_code,
       shortLink: doc.short_link_slug ? `${baseUrl}/dr/${doc.short_link_slug}` : null,
     })
+
+    // Fire-and-forget welcome card on first onboarding completion
+    void sendWelcomeCardToDoctor(id)
+  } catch (err) {
+    next(err)
+  }
+})
+
+// ──────────────────────────────────────────────
+// GET /api/onboarding/welcome-card/preview  (protected)
+// Returns the rendered PNG inline — used to verify card design before WhatsApp send.
+// ──────────────────────────────────────────────
+router.get('/welcome-card/preview', requireAuth, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { id } = (req as AuthenticatedRequest).doctor
+    const result = await query(
+      `SELECT name, specialty, clinic_name, city, doctor_code FROM doctors WHERE id = $1`,
+      [id]
+    )
+    if (result.rows.length === 0) throw new NotFound('Doctor not found')
+    const doc = result.rows[0]
+
+    const buffer = await renderWelcomeCard({
+      name: doc.name || 'Doctor',
+      specialty: doc.specialty,
+      clinicName: doc.clinic_name,
+      city: doc.city,
+      doctorCode: doc.doctor_code || 'DC-DEMO-0001',
+    })
+
+    res.setHeader('Content-Type', 'image/png')
+    res.setHeader('Cache-Control', 'no-store')
+    res.send(buffer)
+  } catch (err) {
+    next(err)
+  }
+})
+
+// ──────────────────────────────────────────────
+// POST /api/onboarding/welcome-card/resend  (protected)
+// Manually re-sends welcome card on WhatsApp (e.g. doctor wants a fresh copy).
+// ──────────────────────────────────────────────
+router.post('/welcome-card/resend', requireAuth, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { id } = (req as AuthenticatedRequest).doctor
+    void sendWelcomeCardToDoctor(id)
+    res.json({ success: true, message: 'Welcome card queued for delivery' })
   } catch (err) {
     next(err)
   }

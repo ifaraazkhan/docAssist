@@ -136,7 +136,14 @@ router.post('/', webhookVerify, async (req: Request, res: Response) => {
     }
 
     // ── BRANCH 2: Check if this is a doctor in onboarding ──
-    const onboardingDoc = await query(
+    const onboardingDoc = await query<{
+      id: string
+      name: string | null
+      specialty: string | null
+      clinic_name: string | null
+      onboarding_step: string
+      onboarding_complete: boolean
+    }>(
       `SELECT id, name, specialty, clinic_name, onboarding_step, onboarding_complete
        FROM doctors WHERE phone = $1 AND onboarding_complete = false`,
       [from]
@@ -426,7 +433,14 @@ async function sendDoctorReferralLink(
 // ──────────────────────────────────────────────
 async function handleDoctorSignup(phone: string, contactName: string | null, requestId: string) {
   // Check if already a doctor
-  const existing = await query(
+  const existing = await query<{
+    id: string
+    onboarding_step: string
+    onboarding_complete: boolean
+    name: string | null
+    specialty: string | null
+    clinic_name: string | null
+  }>(
     'SELECT id, onboarding_step, onboarding_complete, name, specialty, clinic_name FROM doctors WHERE phone = $1',
     [phone]
   )
@@ -465,8 +479,8 @@ async function handleDoctorOnboarding(
     await query("UPDATE doctors SET name = $1, onboarding_step = 'specialty', updated_at = now() WHERE id = $2", [cleanName, doc.id])
 
     // Fetch specialties from DB for list message
-    const specResult = await query('SELECT name FROM specialties WHERE is_active = true ORDER BY sort_order ASC')
-    const specialties = specResult.rows.map((r: { name: string }) => r.name)
+    const specResult = await query<{ name: string }>('SELECT name FROM specialties WHERE is_active = true ORDER BY sort_order ASC')
+    const specialties = specResult.rows.map((r) => r.name)
 
     if (specialties.length > 0) {
       await sendWhatsAppSpecialtyList(
@@ -497,8 +511,8 @@ async function handleDoctorOnboarding(
 
   } else if (step === 'specialty_other') {
     // Doctor typed a custom specialty — try to match against our list
-    const specResult = await query('SELECT name FROM specialties WHERE is_active = true ORDER BY sort_order ASC')
-    const allSpecs = specResult.rows.map((r: { name: string }) => r.name)
+    const specResult = await query<{ name: string }>('SELECT name FROM specialties WHERE is_active = true ORDER BY sort_order ASC')
+    const allSpecs = specResult.rows.map((r) => r.name)
     const inputLower = text.toLowerCase().trim()
 
     // Fuzzy match: check if input matches any known specialty (case-insensitive, partial)
@@ -632,13 +646,13 @@ async function handleDoctorOnboarding(
 // ──────────────────────────────────────────────
 // HANDLER: Resume onboarding from last step
 // ──────────────────────────────────────────────
-async function resumeOnboarding(phone: string, doc: { onboarding_step: string; name: string | null; specialty?: string | null; clinic_name?: string | null }) {
+async function resumeOnboarding(phone: string, doc: { id: string; onboarding_step: string; name: string | null; specialty?: string | null; clinic_name?: string | null }) {
   const drName = doc.name ? formatDrName(doc.name) : ''
 
   if (doc.onboarding_step === 'specialty' && doc.name) {
     // Show specialty list
-    const specResult = await query('SELECT name FROM specialties WHERE is_active = true ORDER BY sort_order ASC')
-    const specialties = specResult.rows.map((r: { name: string }) => r.name)
+    const specResult = await query<{ name: string }>('SELECT name FROM specialties WHERE is_active = true ORDER BY sort_order ASC')
+    const specialties = specResult.rows.map((r) => r.name)
     if (specialties.length > 0) {
       await sendWhatsAppSpecialtyList(phone, `Welcome back, ${drName}. Please select your specialty.`, specialties)
       return
