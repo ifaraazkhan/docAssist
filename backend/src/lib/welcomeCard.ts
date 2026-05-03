@@ -67,6 +67,7 @@ async function sendDashboardLoginLink(
  * Errors are logged, never thrown to caller.
  */
 export async function sendWelcomeCardToDoctor(doctorId: string): Promise<void> {
+  console.log(`[welcomeCard] Starting for doctor ${doctorId}`)
   try {
     const result = await query(
       `SELECT id, phone, name, specialty, clinic_name, clinic_address, city, doctor_code
@@ -79,6 +80,7 @@ export async function sendWelcomeCardToDoctor(doctorId: string): Promise<void> {
     }
 
     const doc = result.rows[0]
+    console.log(`[welcomeCard] Doctor found: phone=${doc.phone}, code=${doc.doctor_code}, name=${doc.name}`)
     if (!doc.phone) {
       console.warn(`[welcomeCard] Doctor ${doctorId} has no phone`)
       return
@@ -98,8 +100,11 @@ export async function sendWelcomeCardToDoctor(doctorId: string): Promise<void> {
     }
 
     // 1) Render + send the announcement card image
+    console.log(`[welcomeCard] Rendering card...`)
     const buffer = await renderWelcomeCard(cardInput)
+    console.log(`[welcomeCard] Card rendered (${buffer.length} bytes), uploading media...`)
     const mediaId = await uploadWhatsAppMedia(buffer, 'image/png', `welcome-${doc.doctor_code}.png`)
+    console.log(`[welcomeCard] Media uploaded (id=${mediaId}), sending image...`)
     await sendWhatsAppImage(doc.phone, { mediaId }, buildCaption(cardInput))
     console.log(`[welcomeCard] Image sent to doctor ${doctorId} (${doc.phone})`)
 
