@@ -5,7 +5,7 @@ import { query } from '../lib/db'
 import { normalizePhone, isValidIndianPhone } from '../lib/phone'
 import { signToken } from '../lib/jwt'
 import { generateOtp, sendOtp } from '../lib/sms'
-import { sendWhatsAppMessage } from '../lib/whatsapp'
+import { sendWhatsAppMessage, sendWhatsAppTemplate } from '../lib/whatsapp'
 import { requireAuth, AuthenticatedRequest } from '../middleware/auth'
 import { authLimiter } from '../middleware/rateLimit'
 import { BadRequest, Unauthorized, NotFound } from '../lib/errors'
@@ -39,6 +39,52 @@ router.post('/login', async (req: Request, res: Response, next: NextFunction) =>
     const token = signToken(doctor.id, doctor.jwt_version)
 
     res.json({ success: true, token, doctor })
+  } catch (err) {
+    next(err)
+  }
+})
+
+// ──────────────────────────────────────────────
+// POST /api/auth/landing-signup
+// Body: { phone, device: 'mobile'|'desktop' }
+// Called from drcliniq.in landing page before wa.me redirect.
+// Captures lead even if doctor never opens WhatsApp.
+// ──────────────────────────────────────────────
+router.post('/landing-signup', authLimiter, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { phone: rawPhone, device } = req.body
+    if (!rawPhone) throw new BadRequest('Phone is required')
+
+    const phone = normalizePhone(rawPhone)
+    if (!isValidIndianPhone(phone)) throw new BadRequest('Invalid Indian phone number')
+
+    const signupDevice = device === 'desktop' ? 'desktop' : 'mobile'
+
+    // Upsert: create row if new, update device if existing (don't overwrite onboarding data)
+    await query(
+      `INSERT INTO doctors (phone, signup_source, signup_device)
+       VALUES ($1, 'landing', $2)
+       ON CONFLICT (phone) DO UPDATE
+         SET signup_device = EXCLUDED.signup_device`,
+      [phone, signupDevice]
+    )
+
+    // Send WhatsApp welcome template if approved and enabled (desktop path mainly)
+    if (process.env.WHATSAPP_WELCOME_TEMPLATE_ENABLED === 'true') {
+      const templateName = process.env.WHATSAPP_WELCOME_TEMPLATE_NAME || 'welcome_doctor'
+      try {
+        await sendWhatsAppTemplate(phone, templateName)
+      } catch (err) {
+        // Don't fail the request if template send fails — lead is already captured
+        console.error('[landing-signup] WhatsApp template send failed:', err)
+      }
+    }
+
+    const waNumber = process.env.WHATSAPP_BUSINESS_PHONE || '919876543210'
+    const waMessage = `Hi DrCliniq! I'd like to get started.\nMy number: +91 ${phone.replace(/^91/, '')}`
+    const waUrl = `https://wa.me/${waNumber}?text=${encodeURIComponent(waMessage)}`
+
+    res.json({ success: true, waUrl })
   } catch (err) {
     next(err)
   }

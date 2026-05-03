@@ -231,7 +231,7 @@ router.get('/welcome-card/preview', requireAuth, async (req: Request, res: Respo
   try {
     const { id } = (req as AuthenticatedRequest).doctor
     const result = await query(
-      `SELECT name, specialty, clinic_name, city, doctor_code FROM doctors WHERE id = $1`,
+      `SELECT name, specialty, clinic_name, clinic_address, city, doctor_code FROM doctors WHERE id = $1`,
       [id]
     )
     if (result.rows.length === 0) throw new NotFound('Doctor not found')
@@ -241,6 +241,7 @@ router.get('/welcome-card/preview', requireAuth, async (req: Request, res: Respo
       name: doc.name || 'Doctor',
       specialty: doc.specialty,
       clinicName: doc.clinic_name,
+      clinicAddress: doc.clinic_address,
       city: doc.city,
       doctorCode: doc.doctor_code || 'DC-DEMO-0001',
     })
