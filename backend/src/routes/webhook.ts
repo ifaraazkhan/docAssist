@@ -142,10 +142,11 @@ router.post('/', webhookVerify, async (req: Request, res: Response) => {
       name: string | null
       specialty: string | null
       clinic_name: string | null
+      clinic_address: string | null
       onboarding_step: string
       onboarding_complete: boolean
     }>(
-      `SELECT id, name, specialty, clinic_name, onboarding_step, onboarding_complete
+      `SELECT id, name, specialty, clinic_name, clinic_address, onboarding_step, onboarding_complete
        FROM doctors WHERE phone = $1 AND onboarding_complete = false`,
       [from]
     )
@@ -470,7 +471,7 @@ async function handleDoctorSignup(phone: string, contactName: string | null, req
 async function handleDoctorOnboarding(
   phone: string,
   text: string,
-  doc: { id: string; name: string | null; specialty: string | null; clinic_name: string | null; onboarding_step: string },
+  doc: { id: string; name: string | null; specialty: string | null; clinic_name: string | null; clinic_address: string | null; onboarding_step: string },
   requestId: string
 ) {
   const step = doc.onboarding_step
@@ -561,28 +562,35 @@ async function handleDoctorOnboarding(
     console.log(`[webhook][${requestId}] onboarding: specialty confirmed`)
 
   } else if (step === 'clinic_name') {
-    // Save clinic name and move to confirmation step
-    await query("UPDATE doctors SET clinic_name = $1, onboarding_step = 'confirm', updated_at = now() WHERE id = $2", [text, doc.id])
+    // Save clinic name and ask for clinic address
+    await query("UPDATE doctors SET clinic_name = $1, onboarding_step = 'clinic_address', updated_at = now() WHERE id = $2", [text, doc.id])
+    await sendWhatsAppMessage(phone, 'What is your clinic address? (e.g. 123 MG Road, Lucknow)')
+    console.log(`[webhook][${requestId}] onboarding: clinic_name collected`)
+
+  } else if (step === 'clinic_address') {
+    // Save clinic address and move to confirmation step
+    await query("UPDATE doctors SET clinic_address = $1, onboarding_step = 'confirm', updated_at = now() WHERE id = $2", [text, doc.id])
 
     await sendWhatsAppButtons(
       phone,
       `Please confirm your details:\n\n` +
       `*Name:* ${formatDrName(doc.name || '')}\n` +
       `*Specialty:* ${doc.specialty}\n` +
-      `*Clinic:* ${text}\n\n` +
+      `*Clinic:* ${doc.clinic_name || text}\n` +
+      `*Address:* ${text}\n\n` +
       `Is this correct?`,
       [
         { id: 'CONFIRM_YES', title: 'Yes, confirm' },
         { id: 'CONFIRM_NO', title: 'Start over' },
       ]
     )
-    console.log(`[webhook][${requestId}] onboarding: clinic_name collected, awaiting confirmation`)
+    console.log(`[webhook][${requestId}] onboarding: clinic_address collected, awaiting confirmation`)
 
   } else if (step === 'confirm') {
     const upper = text.toUpperCase()
     if (upper === 'CONFIRM_NO' || upper === 'NO') {
       // Reset onboarding
-      await query("UPDATE doctors SET name = NULL, specialty = NULL, clinic_name = NULL, onboarding_step = 'name', updated_at = now() WHERE id = $1", [doc.id])
+      await query("UPDATE doctors SET name = NULL, specialty = NULL, clinic_name = NULL, clinic_address = NULL, onboarding_step = 'name', updated_at = now() WHERE id = $1", [doc.id])
       await sendWhatsAppMessage(phone, 'No problem. Let\'s start over.\n\nWhat is your full name?')
       console.log(`[webhook][${requestId}] onboarding: reset by doctor`)
       return
@@ -640,10 +648,10 @@ async function handleDoctorOnboarding(
       )
 
       console.log(`[webhook][${requestId}] onboarding complete: code=${doctorCode} slug=${slug}`)
-
-      // Fire-and-forget welcome card
-      void sendWelcomeCardToDoctor(doc.id)
     })
+
+    // Fire-and-forget welcome card — AFTER transaction commits so doctor_code is visible
+    void sendWelcomeCardToDoctor(doc.id)
   }
 }
 
@@ -675,13 +683,19 @@ async function resumeOnboarding(phone: string, doc: { id: string; onboarding_ste
     return
   }
 
+  if (doc.onboarding_step === 'clinic_address' && doc.name && doc.clinic_name) {
+    await sendWhatsAppMessage(phone, `Welcome back${drName ? ', ' + drName : ''}. What is your clinic address?`)
+    return
+  }
+
   if (doc.onboarding_step === 'confirm' && doc.name && doc.specialty && doc.clinic_name) {
     await sendWhatsAppButtons(
       phone,
       `Welcome back. Please confirm your details:\n\n` +
       `*Name:* ${drName}\n` +
       `*Specialty:* ${doc.specialty}\n` +
-      `*Clinic:* ${doc.clinic_name}\n\n` +
+      `*Clinic:* ${doc.clinic_name}\n` +
+      `*Address:* ${doc.clinic_address || 'Not provided'}\n\n` +
       `Is this correct?`,
       [
         { id: 'CONFIRM_YES', title: 'Yes, confirm' },
@@ -695,6 +709,7 @@ async function resumeOnboarding(phone: string, doc: { id: string; onboarding_ste
     name: 'Let\'s continue setting up. What is your full name?',
     specialty: `Welcome back${drName ? ', ' + drName : ''}. What is your specialty?`,
     clinic_name: `Welcome back${drName ? ', ' + drName : ''}. What is your clinic name?`,
+    clinic_address: `Welcome back${drName ? ', ' + drName : ''}. What is your clinic address?`,
   }
   const msg = prompts[doc.onboarding_step] || 'Let\'s continue setting up. What is your full name?'
   await sendWhatsAppMessage(phone, msg)
