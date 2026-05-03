@@ -117,19 +117,6 @@ export async function sendWelcomeCardToDoctor(doctorId: string): Promise<void> {
     } catch {
       /* welcome_card_sent_at column may not exist yet — ignore */
     }
-
-    // 2) Send dashboard CTA so the doctor lands in the PWA already signed in.
-    // Wrapped separately so an image-send success isn't undone by a CTA failure.
-    try {
-      await sendDashboardLoginLink(
-        doctorId,
-        doc.phone,
-        preferredName(doc.name, doc.clinic_name)
-      )
-      console.log(`[welcomeCard] Dashboard CTA sent to doctor ${doctorId}`)
-    } catch (err) {
-      console.error(`[welcomeCard] Dashboard CTA failed for doctor ${doctorId}:`, err)
-    }
   } catch (err) {
     console.error(`[welcomeCard] Failed for doctor ${doctorId}:`, err)
     // swallow — never block onboarding

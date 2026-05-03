@@ -65,25 +65,19 @@ function shortLink(doctorCode: string): string {
  */
 async function renderTextImage(
   label: string,
-  opts: { fontSize: number; fontWeight?: string; color: string; maxWidth: number }
+  opts: { font: string; color: string }
 ): Promise<Buffer> {
-  const weight = opts.fontWeight === '700' ? 'bold' : 'normal'
-  // Pango font_size in 1/1024ths of a point
-  const pangoSize = Math.round(opts.fontSize * 1024)
-
   return sharp({
     text: {
-      text: `<span foreground="${opts.color}" weight="${weight}" font_size="${pangoSize}">${escapeXml(label)}</span>`,
-      width: opts.maxWidth,
+      text: `<span foreground="${opts.color}">${escapeXml(label)}</span>`,
+      font: opts.font,
       rgba: true,
-      dpi: 74,
+      dpi: 72,
     },
   })
     .png()
     .toBuffer()
 }
-
-function hexToRgba(_hex: string): boolean { return true }
 
 /**
  * Build all text overlays as individual sharp composite inputs.
@@ -104,24 +98,24 @@ async function buildTextOverlays(doc: DoctorCardInput): Promise<sharp.OverlayOpt
 
   // Doctor name — large bold
   const nameImg = await renderTextImage(drName, {
-    fontSize: 42, fontWeight: '700', color: '#1a2332', maxWidth: 800,
+    font: 'Sans Bold 44', color: '#1a2332',
   })
-  overlays.push({ input: nameImg, top: 155, left: 147 })
+  overlays.push({ input: nameImg, top: 160, left: 147 })
 
   // Specialty — medium, teal
   if (specialty) {
     const specImg = await renderTextImage(specialty, {
-      fontSize: 22, fontWeight: '700', color: '#0d9488', maxWidth: 700,
+      font: 'Sans Bold 24', color: '#0d9488',
     })
-    overlays.push({ input: specImg, top: 220, left: 147 })
+    overlays.push({ input: specImg, top: 225, left: 147 })
   }
 
   // Address — smaller
   if (addressLine) {
     const addrImg = await renderTextImage(addressLine, {
-      fontSize: 16, fontWeight: '400', color: '#555555', maxWidth: 400,
+      font: 'Sans 18', color: '#555555',
     })
-    overlays.push({ input: addrImg, top: 948, left: 240 })
+    overlays.push({ input: addrImg, top: 950, left: 240 })
   }
 
   return overlays
