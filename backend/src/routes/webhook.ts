@@ -627,25 +627,15 @@ async function handleDoctorOnboarding(
         [doc.id, ['appointment', 'book', 'token', 'opd', 'booking'], 'Book an appointment']
       )
 
-      // Generate magic link for PWA login
-      const token = crypto.randomBytes(32).toString('hex')
-      const expiresAt = new Date(Date.now() + 60 * 60 * 1000)
+      // Generate magic link for PWA login — will be sent by sendWelcomeCardToDoctor
+      // (no CTA here to avoid duplicate; welcomeCard.ts sends image + dashboard link)
 
-      await client.query(
-        'INSERT INTO magic_links (token, doctor_id, purpose, expires_at) VALUES ($1, $2, $3, $4)',
-        [token, doc.id, 'setup', expiresAt]
-      )
-
-      const link = `${process.env.APP_URL || 'http://localhost:3000'}/auth/verify?token=${token}`
-
-      await sendWhatsAppCTAButton(
+      // Send a simple confirmation text instead
+      await sendWhatsAppMessage(
         phone,
-        `Your clinic is now live on DrCliniq.\n\n` +
+        `Your clinic is now live on DrCliniq! 🎉\n\n` +
         `*Clinic code:* ${doctorCode}\n\n` +
-        `Open your dashboard to set up auto-reply protocols and share your clinic code with patients.\n\n` +
-        `_Link expires in 60 minutes._`,
-        'Open Dashboard',
-        link
+        `Your welcome card and dashboard link are on the way.`
       )
 
       console.log(`[webhook][${requestId}] onboarding complete: code=${doctorCode} slug=${slug}`)
