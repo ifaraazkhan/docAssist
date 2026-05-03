@@ -1,21 +1,45 @@
 import crypto from 'crypto'
 import { renderWelcomeCard, DoctorCardInput } from './imageCard'
-import { uploadWhatsAppMedia, sendWhatsAppImage, sendWhatsAppCTAButton } from './whatsapp'
+import { uploadWhatsAppMedia, sendWhatsAppImage, sendWhatsAppCTAButton, sendWhatsAppMessage } from './whatsapp'
 import { query } from './db'
 
 const SUPPORTED_LANGS = ['en', 'hi'] as const
 
-function buildCaption(doc: DoctorCardInput): string {
+/** Patient-facing caption — forwarded WITH the image */
+function buildPatientCaption(doc: DoctorCardInput): string {
+  const waPhone = process.env.WHATSAPP_BUSINESS_PHONE || ''
+  const waLink = waPhone
+    ? `https://wa.me/${waPhone}?text=${encodeURIComponent('Hi! Clinic code: ' + doc.doctorCode)}`
+    : ''
+
+  const lines: string[] = []
+  lines.push(`📋 *Dr. ${doc.name}*`)
+  if (doc.specialty) lines.push(`${doc.specialty}`)
+  if (doc.clinicName) lines.push(`🏥 ${doc.clinicName}`)
+  lines.push('')
+  lines.push('👉 WhatsApp pe connect karein:')
+  lines.push('• Appointment book karein')
+  lines.push('• Reports & reminders paayein')
+  lines.push('• Directly doctor se baat karein')
+  if (waLink) {
+    lines.push('')
+    lines.push(`🔗 Click to start: ${waLink}`)
+  }
+  return lines.join('\n')
+}
+
+/** Doctor-only welcome + sharing tips — sent as separate text message */
+function buildDoctorWelcome(doc: DoctorCardInput): string {
   return [
-    `🎉 Welcome, Dr. ${doc.name} — aap ab DrCliniq pe live hain!`,
+    `🎉 Welcome aboard, Dr. ${doc.name}!`,
     '',
-    'Yeh aapka announcement card hai. Patients ke saath share karein:',
+    'Aapka announcement card ready hai. Aise share karein:',
     '',
     '✅ WhatsApp Status pe lagayein',
     '✅ Instagram / Facebook pe post karein',
     '✅ Clinic noticeboard pe print karein',
     '',
-    `Code: ${doc.doctorCode}`,
+    `Clinic Code: *${doc.doctorCode}*`,
   ].join('\n')
 }
 
@@ -99,13 +123,17 @@ export async function sendWelcomeCardToDoctor(doctorId: string): Promise<void> {
       doctorCode: doc.doctor_code,
     }
 
-    // 1) Render + send the announcement card image
+    // 1) Send doctor-only welcome text (not forwarded with image)
+    console.log(`[welcomeCard] Sending doctor welcome text...`)
+    await sendWhatsAppMessage(doc.phone, buildDoctorWelcome(cardInput))
+
+    // 2) Render + send the announcement card with patient-friendly caption
     console.log(`[welcomeCard] Rendering card...`)
     const buffer = await renderWelcomeCard(cardInput)
     console.log(`[welcomeCard] Card rendered (${buffer.length} bytes), uploading media...`)
     const mediaId = await uploadWhatsAppMedia(buffer, 'image/png', `welcome-${doc.doctor_code}.png`)
     console.log(`[welcomeCard] Media uploaded (id=${mediaId}), sending image...`)
-    await sendWhatsAppImage(doc.phone, { mediaId }, buildCaption(cardInput))
+    await sendWhatsAppImage(doc.phone, { mediaId }, buildPatientCaption(cardInput))
     console.log(`[welcomeCard] Image sent to doctor ${doctorId} (${doc.phone})`)
 
     // Mark image sent (column is optional — silently no-ops if missing)
