@@ -80,7 +80,7 @@ router.post('/landing-signup', authLimiter, async (req: Request, res: Response, 
       }
     }
 
-    const waNumber = process.env.WHATSAPP_BUSINESS_PHONE || '919876543210'
+    const waNumber = process.env.WHATSAPP_BUSINESS_PHONE || ''
     const waMessage = `Hi DrCliniq! I'd like to get started.\nMy number: +91 ${phone.replace(/^91/, '')}`
     const waUrl = `https://wa.me/${waNumber}?text=${encodeURIComponent(waMessage)}`
 

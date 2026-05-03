@@ -393,7 +393,12 @@ async function sendDoctorShareLink(
     )
     return
   }
-  const waPhone = process.env.WHATSAPP_BUSINESS_PHONE || doc.phone
+  const waPhone = process.env.WHATSAPP_BUSINESS_PHONE
+  if (!waPhone) {
+    console.warn('[webhook] WHATSAPP_BUSINESS_PHONE not set — cannot generate share link')
+    await sendWhatsAppMessage(phone, 'Share link is not available yet. Please contact support.')
+    return
+  }
   const prefilled = `Hi! Clinic code: ${doc.doctor_code}`
   const shareUrl = `https://wa.me/${waPhone}?text=${encodeURIComponent(prefilled)}`
   const label = doc.clinic_name || preferredName(doc)
@@ -627,15 +632,25 @@ async function handleDoctorOnboarding(
         [doc.id, ['appointment', 'book', 'token', 'opd', 'booking'], 'Book an appointment']
       )
 
-      // Generate magic link for PWA login — will be sent by sendWelcomeCardToDoctor
-      // (no CTA here to avoid duplicate; welcomeCard.ts sends image + dashboard link)
+      // Generate magic link for PWA login
+      const token = crypto.randomBytes(32).toString('hex')
+      const expiresAt = new Date(Date.now() + 60 * 60 * 1000)
 
-      // Send a simple confirmation text instead
-      await sendWhatsAppMessage(
+      await client.query(
+        'INSERT INTO magic_links (token, doctor_id, purpose, expires_at) VALUES ($1, $2, $3, $4)',
+        [token, doc.id, 'setup', expiresAt]
+      )
+
+      const link = `${process.env.APP_URL || 'http://localhost:3000'}/auth/verify?token=${token}`
+
+      await sendWhatsAppCTAButton(
         phone,
         `Your clinic is now live on DrCliniq! 🎉\n\n` +
         `*Clinic code:* ${doctorCode}\n\n` +
-        `Your welcome card and dashboard link are on the way.`
+        `Open your dashboard to set up auto-reply protocols and share your clinic code with patients.\n\n` +
+        `_Link expires in 60 minutes._`,
+        'Open Dashboard',
+        link
       )
 
       console.log(`[webhook][${requestId}] onboarding complete: code=${doctorCode} slug=${slug}`)
@@ -1087,8 +1102,8 @@ async function renderClinicDetails(doctorId: string): Promise<string> {
 
   if (doc.clinic_phone) parts.push(`📞 ${doc.clinic_phone}`)
 
-  const waPhone = process.env.WHATSAPP_BUSINESS_PHONE || doc.phone
-  if (doc.doctor_code) {
+  const waPhone = process.env.WHATSAPP_BUSINESS_PHONE || ''
+  if (doc.doctor_code && waPhone) {
     const clinicLabel = doc.clinic_name || formatDrName(doc.name || '')
     const shareLink = `https://wa.me/${waPhone}?text=${encodeURIComponent('Hi! Clinic code: ' + doc.doctor_code)}`
     parts.push('')

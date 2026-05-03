@@ -40,9 +40,10 @@ function escapeXml(s: string): string {
 }
 
 function buildWaMeLink(doctorCode: string): string {
-  const num = (process.env.DRCLINIQ_WA_NUMBER || '').replace(/[^0-9]/g, '')
-  const text = encodeURIComponent(`Hi DrCliniq, I want to book with ${doctorCode}`)
-  return num ? `https://wa.me/${num}?text=${text}` : `https://drcliniq.in`
+  const waPhone = process.env.WHATSAPP_BUSINESS_PHONE || ''
+  if (!waPhone) return 'https://drcliniq.in'
+  const text = encodeURIComponent(`Hi! Clinic code: ${doctorCode}`)
+  return `https://wa.me/${waPhone.replace(/[^0-9]/g, '')}?text=${text}`
 }
 
 function shortLink(doctorCode: string): string {
@@ -59,18 +60,22 @@ function shortLink(doctorCode: string): string {
 //
 // Dynamic overlays (name, specialty, QR, address) align with these.
 
+const FONT_REGULAR = path.join(__dirname, '../../assets/fonts/DejaVuSans.ttf')
+const FONT_BOLD = path.join(__dirname, '../../assets/fonts/DejaVuSans-Bold.ttf')
+
 /**
  * Render a single text label as a PNG buffer using sharp's built-in text engine
- * (Pango). This is font-system-independent — works on any container.
+ * (Pango) with a bundled font file — works on any container.
  */
 async function renderTextImage(
   label: string,
-  opts: { font: string; color: string }
+  opts: { font: string; fontfile: string; color: string }
 ): Promise<Buffer> {
   return sharp({
     text: {
       text: `<span foreground="${opts.color}">${escapeXml(label)}</span>`,
       font: opts.font,
+      fontfile: opts.fontfile,
       rgba: true,
       dpi: 72,
     },
@@ -98,14 +103,14 @@ async function buildTextOverlays(doc: DoctorCardInput): Promise<sharp.OverlayOpt
 
   // Doctor name — large bold
   const nameImg = await renderTextImage(drName, {
-    font: 'Sans Bold 44', color: '#1a2332',
+    font: 'DejaVu Sans Bold 44', fontfile: FONT_BOLD, color: '#1a2332',
   })
   overlays.push({ input: nameImg, top: 160, left: 147 })
 
   // Specialty — medium, teal
   if (specialty) {
     const specImg = await renderTextImage(specialty, {
-      font: 'Sans Bold 24', color: '#0d9488',
+      font: 'DejaVu Sans Bold 24', fontfile: FONT_BOLD, color: '#0d9488',
     })
     overlays.push({ input: specImg, top: 225, left: 147 })
   }
@@ -113,7 +118,7 @@ async function buildTextOverlays(doc: DoctorCardInput): Promise<sharp.OverlayOpt
   // Address — smaller
   if (addressLine) {
     const addrImg = await renderTextImage(addressLine, {
-      font: 'Sans 18', color: '#555555',
+      font: 'DejaVu Sans 18', fontfile: FONT_REGULAR, color: '#555555',
     })
     overlays.push({ input: addrImg, top: 950, left: 240 })
   }

@@ -194,7 +194,7 @@ router.get('/share-info', requireAuth, async (req: Request, res: Response, next:
     const baseUrl = process.env.APP_URL || 'http://localhost:3000'
     const shortLink = doc.short_link_slug ? `${baseUrl}/dr/${doc.short_link_slug}` : null
     // QR data = wa.me link with DrCliniq business number + friendly pre-filled message
-    const waPhone = process.env.WHATSAPP_BUSINESS_PHONE || doc.phone
+    const waPhone = process.env.WHATSAPP_BUSINESS_PHONE || ''
     const clinicLabel = doc.clinic_name || (doc.name ? `Dr. ${doc.name}` : 'DrCliniq')
     const prefilledMsg = doc.doctor_code
       ? `Hi! Clinic code: ${doc.doctor_code}`
