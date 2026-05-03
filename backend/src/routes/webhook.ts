@@ -6,6 +6,7 @@ import { signToken } from '../lib/jwt'
 import { sendWhatsAppMessage, sendWhatsAppMenu, sendWhatsAppButtons, sendWhatsAppSpecialtyList, sendWhatsAppCTAButton } from '../lib/whatsapp'
 import { webhookVerify } from '../middleware/webhookVerify'
 import { generateDoctorCode, generateSlug } from '../lib/clinic-code'
+import { sendWelcomeCardToDoctor } from '../lib/welcomeCard'
 
 const router = Router()
 
@@ -639,6 +640,9 @@ async function handleDoctorOnboarding(
       )
 
       console.log(`[webhook][${requestId}] onboarding complete: code=${doctorCode} slug=${slug}`)
+
+      // Fire-and-forget welcome card
+      void sendWelcomeCardToDoctor(doc.id)
     })
   }
 }
