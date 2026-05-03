@@ -442,8 +442,9 @@ async function handleDoctorSignup(phone: string, contactName: string | null, req
     name: string | null
     specialty: string | null
     clinic_name: string | null
+    clinic_address: string | null
   }>(
-    'SELECT id, onboarding_step, onboarding_complete, name, specialty, clinic_name FROM doctors WHERE phone = $1',
+    'SELECT id, onboarding_step, onboarding_complete, name, specialty, clinic_name, clinic_address FROM doctors WHERE phone = $1',
     [phone]
   )
 
@@ -576,7 +577,7 @@ async function handleDoctorOnboarding(
       `Please confirm your details:\n\n` +
       `*Name:* ${formatDrName(doc.name || '')}\n` +
       `*Specialty:* ${doc.specialty}\n` +
-      `*Clinic:* ${doc.clinic_name || text}\n` +
+      `*Clinic:* ${doc.clinic_name}\n` +
       `*Address:* ${text}\n\n` +
       `Is this correct?`,
       [
