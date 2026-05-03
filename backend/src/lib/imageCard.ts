@@ -59,49 +59,72 @@ function shortLink(doctorCode: string): string {
 //
 // Dynamic overlays (name, specialty, QR, address) align with these.
 
-function buildTextOverlaySvg(doc: DoctorCardInput): string {
+/**
+ * Render a single text label as a PNG buffer using sharp's built-in text engine
+ * (Pango). This is font-system-independent — works on any container.
+ */
+async function renderTextImage(
+  label: string,
+  opts: { fontSize: number; fontWeight?: string; color: string; maxWidth: number }
+): Promise<Buffer> {
+  const weight = opts.fontWeight === '700' ? 'bold' : 'normal'
+  // Pango font_size in 1/1024ths of a point
+  const pangoSize = Math.round(opts.fontSize * 1024)
+
+  return sharp({
+    text: {
+      text: `<span foreground="${opts.color}" weight="${weight}" font_size="${pangoSize}">${escapeXml(label)}</span>`,
+      width: opts.maxWidth,
+      rgba: true,
+      dpi: 74,
+    },
+  })
+    .png()
+    .toBuffer()
+}
+
+function hexToRgba(_hex: string): boolean { return true }
+
+/**
+ * Build all text overlays as individual sharp composite inputs.
+ * Each text label is rendered via Pango (sharp's text engine) so
+ * it works even on containers without system fonts installed.
+ */
+async function buildTextOverlays(doc: DoctorCardInput): Promise<sharp.OverlayOptions[]> {
   const rawName = toTitleCase(doc.name)
-  const drName = escapeXml(
-    rawName.startsWith('Dr.') || rawName.startsWith('Dr ') ? rawName : `Dr. ${rawName}`
-  )
-  const specialty = doc.specialty ? escapeXml(toTitleCase(doc.specialty)) : ''
+  const drName = rawName.startsWith('Dr.') || rawName.startsWith('Dr ') ? rawName : `Dr. ${rawName}`
+  const specialty = doc.specialty ? toTitleCase(doc.specialty) : ''
 
   const addressParts = [doc.clinicAddress, doc.city]
     .filter((v): v is string => typeof v === 'string' && v.trim().length > 0)
-    .map((v) => escapeXml(toTitleCase(v)))
+    .map((v) => toTitleCase(v))
   const addressLine = addressParts.join(', ')
 
-  // Address sits on a single strip between the pin (right edge ~x=223) and the
-  // baked URL (~x=500). ~250px wide → split conservatively at >32 chars.
-  let addrLine1 = addressLine
-  let addrLine2 = ''
-  if (addressLine.length > 32) {
-    const mid = addressLine.lastIndexOf(',', 32)
-    if (mid > 0) {
-      addrLine1 = addressLine.slice(0, mid)
-      addrLine2 = addressLine.slice(mid + 1).trim()
-    }
+  const overlays: sharp.OverlayOptions[] = []
+
+  // Doctor name — large bold
+  const nameImg = await renderTextImage(drName, {
+    fontSize: 42, fontWeight: '700', color: '#1a2332', maxWidth: 800,
+  })
+  overlays.push({ input: nameImg, top: 155, left: 147 })
+
+  // Specialty — medium, teal
+  if (specialty) {
+    const specImg = await renderTextImage(specialty, {
+      fontSize: 22, fontWeight: '700', color: '#0d9488', maxWidth: 700,
+    })
+    overlays.push({ input: specImg, top: 220, left: 147 })
   }
 
-  return `
-<svg width="${WIDTH}" height="${HEIGHT}" xmlns="http://www.w3.org/2000/svg">
-  <style>
-    .name      { font-family: sans-serif; font-size: 52px; font-weight: 700; fill: #1a2332; }
-    .specialty { font-family: sans-serif; font-size: 26px; font-weight: 500; fill: #0d9488; }
-    .addr      { font-family: sans-serif; font-size: 18px; font-weight: 400; fill: #555555; }
-  </style>
+  // Address — smaller
+  if (addressLine) {
+    const addrImg = await renderTextImage(addressLine, {
+      fontSize: 16, fontWeight: '400', color: '#555555', maxWidth: 400,
+    })
+    overlays.push({ input: addrImg, top: 948, left: 240 })
+  }
 
-  <!-- Doctor name (left-aligned with logo at x=147) -->
-  <text x="147" y="200" class="name">${drName}</text>
-
-  <!-- Specialty -->
-  ${specialty ? `<text x="147" y="245" class="specialty">${specialty}</text>` : ''}
-
-  <!-- Address (next to baked pin at x≈195..223, y≈958) -->
-  ${addrLine1 ? `<text x="240" y="${addrLine2 ? 953 : 965}" class="addr">${addrLine1}</text>` : ''}
-  ${addrLine2 ? `<text x="240" y="975" class="addr">${addrLine2}</text>` : ''}
-</svg>
-`.trim()
+  return overlays
 }
 
 // QR fits inside the baked placeholder box (x=129..470, y=579..887 → 341×308).
@@ -138,12 +161,12 @@ export async function renderWelcomeCard(doc: DoctorCardInput): Promise<Buffer> {
 </svg>`.trim()
   const iconBuffer = await sharp(Buffer.from(waIconSvg)).png().toBuffer()
 
-  const textSvg = buildTextOverlaySvg(doc)
+  const textOverlays = await buildTextOverlays(doc)
 
   const out = await sharp(TEMPLATE_PATH)
     .resize(WIDTH, HEIGHT, { fit: 'fill' })
     .composite([
-      { input: Buffer.from(textSvg), top: 0, left: 0 },
+      ...textOverlays,
       { input: qrBuffer, top: QR_TOP, left: QR_LEFT },
       { input: iconBuffer, top: ICON_TOP, left: ICON_LEFT },
     ])
