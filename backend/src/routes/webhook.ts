@@ -658,7 +658,7 @@ async function handleDoctorOnboarding(
 // ──────────────────────────────────────────────
 // HANDLER: Resume onboarding from last step
 // ──────────────────────────────────────────────
-async function resumeOnboarding(phone: string, doc: { id: string; onboarding_step: string; name: string | null; specialty?: string | null; clinic_name?: string | null }) {
+async function resumeOnboarding(phone: string, doc: { id: string; onboarding_step: string; name: string | null; specialty?: string | null; clinic_name?: string | null; clinic_address?: string | null }) {
   const drName = doc.name ? formatDrName(doc.name) : ''
 
   if (doc.onboarding_step === 'specialty' && doc.name) {
